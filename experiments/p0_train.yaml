@@ -1,0 +1,32 @@
+env:
+  pulses_per_episode: 5000
+  mu_signal: 0.5
+  mu_decoy: 0.1
+  mu_vac: 0.0
+  p_signal: 0.6
+  p_decoy: 0.3
+  p_vac: 0.1
+  eta: 0.1
+  dark_count: 1e-6
+  det_eff: 0.6
+  basis_prob: 0.5
+
+
+train:
+  algo: ppo
+  total_timesteps: 2_000_000
+  learning_rate: 3e-4
+  gamma: 0.99
+  clip_range: 0.2
+  batch_size: 2048
+  n_epochs: 10
+
+
+logging:
+  logdir: results/p0
+  save_interval: 10000
+  use_wandb: false
+
+
+opponent:
+  type: fixed # or 'learned' to train Eve
