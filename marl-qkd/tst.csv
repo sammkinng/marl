@@ -1,0 +1,14 @@
+# Columns:
+# Experiment_ID, Description, mu_signal, mu_decoy, mu_vac, p_signal, p_decoy, p_vac, eta, dark_count, det_eff, basis_prob, Eve_time_shift, Eve_attack_fraction, Seed, Pulses_per_episode, Notes
+
+
+Exp001, Baseline BB84 no Eve, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.1, 1e-6, 0.6, 0.5, 0.0, 0.0, 42, 20000, No attack; check SKR/QBER
+Exp002, Baseline BB84 no Eve, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.05, 1e-6, 0.6, 0.5, 0.0, 0.0, 43, 20000, Lower channel transmissivity
+Exp003, Baseline BB84 no Eve, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.02, 1e-6, 0.6, 0.5, 0.0, 0.0, 44, 20000, Very low transmissivity
+Exp004, Time-shift Eve, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.1, 1e-6, 0.6, 0.5, 0.5, 0.5, 42, 20000, Eve shifts 50% detection efficiency on half of pulses
+Exp005, Time-shift Eve, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.1, 1e-5, 0.6, 0.5, 0.5, 0.5, 42, 20000, Eve + higher dark counts
+Exp006, Time-shift Eve, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.05, 1e-5, 0.6, 0.5, 0.5, 0.5, 43, 20000, Eve + lower eta + higher dark counts
+Exp007, Variation seed, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.1, 1e-6, 0.6, 0.5, 0.5, 0.5, 100, 20000, Test reproducibility
+Exp008, Variation seed, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.1, 1e-6, 0.6, 0.5, 0.5, 0.5, 101, 20000, Test reproducibility
+Exp009, Extreme loss, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.01, 1e-6, 0.6, 0.5, 0.0, 0.0, 42, 20000, Near zero eta, no attack
+Exp010, Extreme loss + Eve, 0.5, 0.1, 0.0, 0.6, 0.3, 0.1, 0.01, 1e-6, 0.6, 0.5, 0.5, 0.5, 42, 20000, Low eta + Eve attack
