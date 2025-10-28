@@ -98,7 +98,7 @@ if __name__ == "__main__":
     sys.path.insert(0, repo_root)
 
     try:
-        from env import BB84Env
+        from prev_versions.env import BB84Env
     except Exception as e:
         print("Could not import BB84Env from env.py in repo root. Make sure env.py is at repo root.")
         raise

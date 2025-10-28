@@ -1,0 +1,28 @@
+# Theoretical / validation setup (Stage A)
+# Goal: validate protocol logic with near-ideal components (no loss, perfect detection).
+pulses_per_episode: 50000          # modest number for quick validation
+pulse_rate: 1000000                # 1 MHz (used to convert bits/pulse -> bits/s if needed)
+
+# Use extremely small WCP intensity and use only signal class (no decoys)
+mu_signal: 0.01                    # tiny mean photon number (approx single-photon-ish for testing)
+mu_decoy: 0.0
+mu_vac: 0.0
+p_signal: 1.0                      # only signal pulses — simple validation
+p_decoy: 0.0
+p_vac: 0.0
+
+# Channel: ideal (no loss)
+eta: 1.0                           # full transmittance (no fiber loss)
+# Alternatively you could specify fiber_loss_db_per_km and distance_km instead of eta.
+
+# Detector: ideal
+det_eff: 1.0                       # perfect detector efficiency
+dark_count: 0.0                    # no dark counts
+baseline_qber: 0.0                 # no intrinsic misalignment
+recon_eff: 1.0                     # ideal error-correction efficiency (Shannon)
+basis_prob: 0.5                    # unbiased bases
+seed: 7
+
+# attacks: none
+attack:
+  type: none
