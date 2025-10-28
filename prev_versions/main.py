@@ -1,4 +1,4 @@
-from QKD_SIM import QKDSimulator, load_config
+from prev_versions.QKD_SIM import QKDSimulator, load_config
 import os
 import csv
 import numpy as np

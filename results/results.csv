@@ -1,4 +1,4 @@
-distance_km,mu_signal,seed,SKR_bits_per_s,SKR_bits_per_pulse,QBER
+distance_km,mu_signal,seed,SKR_bits_per_second,SKR_bits_per_pulse,QBER
 10,0.1,2025,0.0,0.0,0.006561679790026247
 10,0.1,2026,0.0,0.0,0.008268259072117593
 10,0.1,2027,0.0,0.0,0.014064697609001406

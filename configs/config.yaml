@@ -39,4 +39,4 @@ sweep_distance_km: [10,20,30,40,50,60,70,80,90,100]
 
 # Logging
 log_per_episode: true
-output_dir: './logs_extended/'
+output_dir: './results/'

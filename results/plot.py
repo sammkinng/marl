@@ -3,10 +3,10 @@ import matplotlib.pyplot as plt
 import os
 
 # CSV file from previous step
-csv_file = './logs_extended/baseline_results.csv'
+csv_file = 'results/results.csv'
 df = pd.read_csv(csv_file)
 
-output_dir = './logs_extended/plots/'
+output_dir = 'results/plots/'
 os.makedirs(output_dir, exist_ok=True)
 
 # Get unique distances
@@ -17,8 +17,8 @@ for distance in distances:
 
     # Group by mu_signal and compute mean/std over seeds
     grouped = df_dist.groupby('mu_signal').agg(
-        SKR_mean=('SKR_bits_per_s', 'mean'),
-        SKR_std=('SKR_bits_per_s', 'std'),
+        SKR_mean=('SKR_bits_per_second', 'mean'),
+        SKR_std=('SKR_bits_per_second', 'std'),
         QBER_mean=('QBER', 'mean'),
         QBER_std=('QBER', 'std')
     ).reset_index()
