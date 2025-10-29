@@ -95,39 +95,16 @@ class CompositeAttack(Attack):
         return out
 
 
-# class TimeShiftAttack(Attack):
-#     def __init__(self, attack_prob: float = 0.0, shift_frac: float = 0.2, rng: Optional[np.random.RandomState] = None):
-#         super().__init__(rng)
-#         self.attack_prob = float(attack_prob)
-#         self.shift_frac = float(shift_frac)
-
-#     def modify_state(self, k, eff, alice_basis, alice_bit, bob_basis):
-#         if self.rng.rand() < self.attack_prob:
-#             eff = eff * (1.0 - self.shift_frac)
-#             return {"k": k, "eff": eff, "alice_bit": alice_bit, "source": "Alice", "extra_dark_prob": 0.0}
-#         return {"k": k, "eff": eff, "alice_bit": alice_bit, "source": "Alice", "extra_dark_prob": 0.0}
-
 class TimeShiftAttack(Attack):
-    def __init__(self, attack_prob: float = 0.0, shift_frac: float = 0.2,
-                 timing_qber_delta: float = 0.0, rng: Optional[np.random.RandomState] = None):
+    def __init__(self, attack_prob: float = 0.0, shift_frac: float = 0.2, rng: Optional[np.random.RandomState] = None):
         super().__init__(rng)
         self.attack_prob = float(attack_prob)
         self.shift_frac = float(shift_frac)
-        # Delta to baseline QBER for pulses shifted into the attack time slot
-        self.timing_qber_delta = float(timing_qber_delta)
 
     def modify_state(self, k, eff, alice_basis, alice_bit, bob_basis):
         if self.rng.rand() < self.attack_prob:
             eff = eff * (1.0 - self.shift_frac)
-            # Tell simulator to increase local QBER by timing_qber_delta for this pulse
-            return {
-                "k": k,
-                "eff": eff,
-                "alice_bit": alice_bit,
-                "source": "Alice",
-                "extra_dark_prob": 0.0,
-                "timing_qber_delta": self.timing_qber_delta
-            }
+            return {"k": k, "eff": eff, "alice_bit": alice_bit, "source": "Alice", "extra_dark_prob": 0.0}
         return {"k": k, "eff": eff, "alice_bit": alice_bit, "source": "Alice", "extra_dark_prob": 0.0}
 
 
@@ -147,100 +124,32 @@ class PNSAttack(Attack):
         return {"k": k, "eff": eff, "alice_bit": alice_bit, "source": "Alice", "extra_dark_prob": 0.0}
 
 
-# class InterceptResendAttack(Attack):
-#     """
-#     Intercept-Resend:
-#     With probability intercept_prob, Eve measures in a random basis.
-#     If she measures, Eve resends a single-photon pulse (k=1) carrying her measured result.
-#     Do NOT overwrite the original alice_bit — return 'eve_bit' and 'source' so the simulator
-#     can still compare Bob's detection to the true Alice bit.
-#     """
-#     def __init__(self, intercept_prob: float = 0.0, resend_mu: float = 1.0, rng: Optional[np.random.RandomState] = None):
-#         super().__init__(rng)
-#         self.intercept_prob = float(intercept_prob)
-#         self.resend_mu = float(resend_mu)
-
-#     def modify_state(self, k, eff, alice_basis, alice_bit, bob_basis):
-#         if self.rng.rand() < self.intercept_prob:
-#             # Eve chooses a random measurement basis
-#             eve_basis = 0 if self.rng.rand() < 0.5 else 1
-#             # If bases match, Eve obtains alice_bit; otherwise measurement is random
-#             if eve_basis == alice_basis:
-#                 measured_bit = alice_bit
-#             else:
-#                 measured_bit = int(self.rng.randint(0, 2))
-#             # Eve resends a single-photon (approximate): set k -> 1 and mark source as 'Eve'
-#             # Return measured bit as 'eve_bit' and do NOT overwrite alice_bit here.
-#             return {
-#                 "k": 1,
-#                 "eff": eff,
-#                 "eve_bit": int(measured_bit),
-#                 "source": "Eve",
-#                 "extra_dark_prob": 0.0
-#             }
-#         else:
-#             return {"k": k, "eff": eff, "source": "Alice", "extra_dark_prob": 0.0}
-
 class InterceptResendAttack(Attack):
-    def __init__(self, intercept_prob: float = 0.0, resend_mu: float = 1.0,
-                 resend_eff: float = 1.0, resend_error_prob: float = 0.0,
-                 rng: Optional[np.random.RandomState] = None):
+    """
+    Intercept-Resend:
+    With probability intercept_prob, Eve measures in a random basis.
+    If she measures, she resends a single-photon pulse (k=1) representing her measurement result.
+    This is a simple, approximate model to introduce errors when Eve's basis != Alice's.
+    """
+    def __init__(self, intercept_prob: float = 0.0, resend_mu: float = 1.0, rng: Optional[np.random.RandomState] = None):
         super().__init__(rng)
         self.intercept_prob = float(intercept_prob)
         self.resend_mu = float(resend_mu)
-        self.resend_eff = float(resend_eff)            # fraction of eff for Eve's resent pulse
-        self.resend_error_prob = float(resend_error_prob)  # prob Eve resends a wrong bit (imperfections)
 
     def modify_state(self, k, eff, alice_basis, alice_bit, bob_basis):
         if self.rng.rand() < self.intercept_prob:
+            # Eve chooses a random measurement basis
             eve_basis = 0 if self.rng.rand() < 0.5 else 1
+            # If bases match, Eve obtains alice_bit with baseline_qber=0 (we assume perfect Eve)
             if eve_basis == alice_basis:
                 measured_bit = alice_bit
             else:
+                # if basis mismatch, measurement is random
                 measured_bit = int(self.rng.randint(0, 2))
-            # With some resend error probability, Eve might misprepare the bit
-            if self.rng.rand() < self.resend_error_prob:
-                measured_bit = 1 - measured_bit
-            # Eve resends a single-photon; we reduce eff to represent imperfect injection / coupling
-            # Return eve_bit and modified eff for the resent pulse (resend_eff * eff)
-                return {
-                "k": 1,
-                "eff": eff * self.resend_eff,
-                "eve_bit": int(measured_bit),
-                "source": "Eve",
-                "extra_dark_prob": 0.0,
-                "label_override": "eve_resend"    # <-- ONE-LINER: mark this pulse as Eve-resend
-            }
-
-        return {"k": k, "eff": eff, "source": "Alice", "extra_dark_prob": 0.0}
-
-
-# class InterceptResendAttack(Attack):
-#     """
-#     Intercept-Resend:
-#     With probability intercept_prob, Eve measures in a random basis.
-#     If she measures, she resends a single-photon pulse (k=1) representing her measurement result.
-#     This is a simple, approximate model to introduce errors when Eve's basis != Alice's.
-#     """
-#     def __init__(self, intercept_prob: float = 0.0, resend_mu: float = 1.0, rng: Optional[np.random.RandomState] = None):
-#         super().__init__(rng)
-#         self.intercept_prob = float(intercept_prob)
-#         self.resend_mu = float(resend_mu)
-
-#     def modify_state(self, k, eff, alice_basis, alice_bit, bob_basis):
-#         if self.rng.rand() < self.intercept_prob:
-#             # Eve chooses a random measurement basis
-#             eve_basis = 0 if self.rng.rand() < 0.5 else 1
-#             # If bases match, Eve obtains alice_bit with baseline_qber=0 (we assume perfect Eve)
-#             if eve_basis == alice_basis:
-#                 measured_bit = alice_bit
-#             else:
-#                 # if basis mismatch, measurement is random
-#                 measured_bit = int(self.rng.randint(0, 2))
-#             # Eve resends a single-photon (approximate): set k -> 1 and mark source as 'Eve'
-#             return {"k": 1, "eff": eff, "alice_bit": measured_bit, "source": "Eve", "extra_dark_prob": 0.0}
-#         else:
-#             return {"k": k, "eff": eff, "alice_bit": alice_bit, "source": "Alice", "extra_dark_prob": 0.0}
+            # Eve resends a single-photon (approximate): set k -> 1 and mark source as 'Eve'
+            return {"k": 1, "eff": eff, "alice_bit": measured_bit, "source": "Eve", "extra_dark_prob": 0.0}
+        else:
+            return {"k": k, "eff": eff, "alice_bit": alice_bit, "source": "Alice", "extra_dark_prob": 0.0}
 
 
 class DarkCountAttack(Attack):
@@ -303,8 +212,6 @@ class QKDSimulator:
 
     def reset_stats(self):
         self.counts = {lab: {"clicks": 0, "errors": 0, "total": 0} for lab in self.labels}
-        # add an explicit bucket for pulses Eve resent (so they don't pollute decoy stats)
-        self.counts["eve_resend"] = {"clicks": 0, "errors": 0, "total": 0}
         self.qber_window = deque(maxlen=100000)
         self.episode = 0
 
@@ -341,152 +248,72 @@ class QKDSimulator:
         raise ValueError("Unsupported eve_action type")
 
     def simulate_pulse(self, mu: float, alice_basis: int, alice_bit: int, bob_basis: int, eve_action: Optional[Union[Dict, Attack, List[Attack]]] = None):
+        """
+        Simulate one pulse with WCP photon number sampling and modular attack hooks.
+        Returns: click (bool), detected_bit (0/1 or None), is_error (bool)
+        """
         # sample photon number k ~ Poisson(mu)
         k = self.rng.poisson(mu)
         # effective detection efficiency including channel loss
         eff = self.det_eff * self.eta
-
-        # preserve true Alice bit for error calculation
-        orig_alice_bit = int(alice_bit)
 
         # parse and get attack object (if any)
         attack_obj = self._parse_eve_action(eve_action)
 
         extra_dark_prob = 0.0
         source = "Alice"
-        eve_sent_bit = None  # will hold bit resent by Eve if any
 
         if attack_obj is not None:
-            res = attack_obj.modify_state(k=k, eff=eff, alice_basis=alice_basis,
-                                          alice_bit=alice_bit, bob_basis=bob_basis)
-            # update local variables from attack output but DO NOT overwrite orig_alice_bit
+            res = attack_obj.modify_state(k=k, eff=eff, alice_basis=alice_basis, alice_bit=alice_bit, bob_basis=bob_basis)
+            # update local variables from attack output
             k = int(res.get("k", k))
             eff = float(res.get("eff", eff))
+            alice_bit = int(res.get("alice_bit", alice_bit))
             source = res.get("source", source)
             extra_dark_prob = float(res.get("extra_dark_prob", 0.0))
-            label_override = res.get("label_override", None)
-
-            # retrieve eve's resent bit if present (do not set alice_bit)
-            if "eve_bit" in res:
-                eve_sent_bit = int(res["eve_bit"])
-            timing_qber_delta = float(res.get("timing_qber_delta", 0.0))
-        else:
-            timing_qber_delta = 0.0
 
         # photon-induced click probability (assuming on-off detectors and independent photons)
         photon_survival_prob = 1.0 - (1.0 - eff) ** k if k > 0 else 0.0
         click_from_photons = self.rng.rand() < photon_survival_prob if photon_survival_prob > 0 else False
 
         # dark counts (two detectors -> combined probability approx)
+        # combine simulator dark_count with any attack-driven extra dark probability
         combined_dark = 1.0 - (1.0 - self.dark_count - extra_dark_prob) ** 2
+        # ensure bounds
         combined_dark = min(max(0.0, combined_dark), 1.0)
         dark_click = self.rng.rand() < combined_dark
         click = click_from_photons or dark_click
 
         if not click:
-            return False, None, False,None
+            return False, None, False
 
         # Decide detected bit
         if click_from_photons:
-            if source == "Eve" and eve_sent_bit is not None:
-                # Use the bit Eve actually resent as the detected bit (no "baseline_qber" for Eve's prepared pulse).
-                detected_bit = eve_sent_bit
+            # If the photons originate from Eve (source == 'Eve'), we assume Eve sent a clean prepared bit (no baseline_qber),
+            # otherwise apply baseline_qber
+            if source == "Eve":
+                detected_bit = alice_bit  # Eve resends a state aligned to her measurement
+                is_error = (detected_bit != alice_bit)
             else:
-                # Photons come from Alice (no Eve resend) — apply baseline QBER noise to the real Alice bit
-                local_qber = min(0.5, max(0.0, self.baseline_qber + timing_qber_delta))
-                detected_bit = orig_alice_bit if self.rng.rand() > local_qber else 1 - orig_alice_bit
+                detected_bit = alice_bit if self.rng.rand() > self.baseline_qber else 1 - alice_bit
+                is_error = (detected_bit != alice_bit)
         else:
             # dark click: random bit value
             detected_bit = int(self.rng.randint(0, 2))
+            is_error = (detected_bit != alice_bit)
 
-        # Compute is_error against original Alice bit (this is the correct definition of QBER)
-        is_error = (detected_bit != orig_alice_bit)
-
-        # wrong-basis handling: if bases differ we still consider this event a click that will be sifted out later.
-        # If you want to model wrong-basis outcomes separately, keep the above error calc (which compares to orig_alice_bit).
-        # Note: sifting (alice_basis == bob_basis) is applied later in run_episode.
+        # wrong-basis handling: if bases differ, measurement outcome is random (50% error on average).
+        # We keep same logic but ensure it is applied to 'is_error' and 'detected_bit'.
         if alice_basis != bob_basis:
-            # Optionally adjust detected_bit/is_error in a way that reflects measurement randomness —
-            # but keep is_error as comparing to orig_alice_bit so QBER stays correct.
             if self.rng.rand() < 0.5:
-                # randomize detected bit outcome when wrong basis
-                detected_bit = 1 - detected_bit if self.rng.rand() < 0.5 else detected_bit
-                is_error = (detected_bit != orig_alice_bit)
+                is_error = True
+                # random flip or keep some randomness
+                detected_bit = 1 - alice_bit if self.rng.rand() < 0.5 else detected_bit
             else:
-                # keep as-is
-                is_error = (detected_bit != orig_alice_bit)
+                is_error = False
+                detected_bit = alice_bit if self.rng.rand() < 0.5 else detected_bit
 
-        return True, detected_bit, is_error, label_override
-
-
-
-    # def simulate_pulse(self, mu: float, alice_basis: int, alice_bit: int, bob_basis: int, eve_action: Optional[Union[Dict, Attack, List[Attack]]] = None):
-    #     """
-    #     Simulate one pulse with WCP photon number sampling and modular attack hooks.
-    #     Returns: click (bool), detected_bit (0/1 or None), is_error (bool)
-    #     """
-    #     # sample photon number k ~ Poisson(mu)
-    #     k = self.rng.poisson(mu)
-    #     # effective detection efficiency including channel loss
-    #     eff = self.det_eff * self.eta
-
-    #     # parse and get attack object (if any)
-    #     attack_obj = self._parse_eve_action(eve_action)
-
-    #     extra_dark_prob = 0.0
-    #     source = "Alice"
-
-    #     if attack_obj is not None:
-    #         res = attack_obj.modify_state(k=k, eff=eff, alice_basis=alice_basis, alice_bit=alice_bit, bob_basis=bob_basis)
-    #         # update local variables from attack output
-    #         k = int(res.get("k", k))
-    #         eff = float(res.get("eff", eff))
-    #         alice_bit = int(res.get("alice_bit", alice_bit))
-    #         source = res.get("source", source)
-    #         extra_dark_prob = float(res.get("extra_dark_prob", 0.0))
-
-    #     # photon-induced click probability (assuming on-off detectors and independent photons)
-    #     photon_survival_prob = 1.0 - (1.0 - eff) ** k if k > 0 else 0.0
-    #     click_from_photons = self.rng.rand() < photon_survival_prob if photon_survival_prob > 0 else False
-
-    #     # dark counts (two detectors -> combined probability approx)
-    #     # combine simulator dark_count with any attack-driven extra dark probability
-    #     combined_dark = 1.0 - (1.0 - self.dark_count - extra_dark_prob) ** 2
-    #     # ensure bounds
-    #     combined_dark = min(max(0.0, combined_dark), 1.0)
-    #     dark_click = self.rng.rand() < combined_dark
-    #     click = click_from_photons or dark_click
-
-    #     if not click:
-    #         return False, None, False
-
-    #     # Decide detected bit
-    #     if click_from_photons:
-    #         # If the photons originate from Eve (source == 'Eve'), we assume Eve sent a clean prepared bit (no baseline_qber),
-    #         # otherwise apply baseline_qber
-    #         if source == "Eve":
-    #             detected_bit = alice_bit  # Eve resends a state aligned to her measurement
-    #             is_error = (detected_bit != alice_bit)
-    #         else:
-    #             detected_bit = alice_bit if self.rng.rand() > self.baseline_qber else 1 - alice_bit
-    #             is_error = (detected_bit != alice_bit)
-    #     else:
-    #         # dark click: random bit value
-    #         detected_bit = int(self.rng.randint(0, 2))
-    #         is_error = (detected_bit != alice_bit)
-
-    #     # wrong-basis handling: if bases differ, measurement outcome is random (50% error on average).
-    #     # We keep same logic but ensure it is applied to 'is_error' and 'detected_bit'.
-    #     if alice_basis != bob_basis:
-    #         if self.rng.rand() < 0.5:
-    #             is_error = True
-    #             # random flip or keep some randomness
-    #             detected_bit = 1 - alice_bit if self.rng.rand() < 0.5 else detected_bit
-    #         else:
-    #             is_error = False
-    #             detected_bit = alice_bit if self.rng.rand() < 0.5 else detected_bit
-
-    #     return True, detected_bit, is_error
+        return True, detected_bit, is_error
 
     def run_episode(self, actions: Dict = None, verbose: bool = False) -> Dict:
         """
@@ -516,28 +343,16 @@ class QKDSimulator:
             alice_basis = 0 if self.rng.rand() < self.basis_prob else 1
             bob_basis = 0 if self.rng.rand() < self.basis_prob else 1
             alice_bit = int(self.rng.randint(0, 2))
-            click, detected_bit, is_error,label_override = self.simulate_pulse(mu, alice_basis, alice_bit, bob_basis, eve_action=eve_action)
+            click, detected_bit, is_error = self.simulate_pulse(mu, alice_basis, alice_bit, bob_basis, eve_action=eve_action)
             self.counts[label]["total"] += 1
             # sifting: only count when bases match and click occurred
             if click and alice_basis == bob_basis:
-                # If the attack marked this pulse as an Eve-resend, count it separately and DO NOT
-                # include it in the signal/decoy/vac counts used for decoy estimation.
-                if label_override == "eve_resend":
-                    self.counts["eve_resend"]["total"] += 1
-                    self.counts["eve_resend"]["clicks"] += 1
-                    if is_error:
-                        self.counts["eve_resend"]["errors"] += 1
-                        self.qber_window.append(1)
-                    else:
-                        self.qber_window.append(0)
+                self.counts[label]["clicks"] += 1
+                if is_error:
+                    self.counts[label]["errors"] += 1
+                    self.qber_window.append(1)
                 else:
-                    self.counts[label]["clicks"] += 1
-                    if is_error:
-                        self.counts[label]["errors"] += 1
-                        self.qber_window.append(1)
-                    else:
-                        self.qber_window.append(0)
-
+                    self.qber_window.append(0)
 
         # compute gains and QBERs
         Q = {}
@@ -551,25 +366,13 @@ class QKDSimulator:
 
         Y1, e1, Q1 = decoy_estimates(self.mu_signal, self.mu_decoy, self.mu_vac, Q["signal"], Q["decoy"], Q["vac"], E["signal"], E["decoy"], E["vac"])
         skr = self.compute_skr(Q["signal"], E["signal"], Q1, e1)
-        
         info = {
-            "Q_s": Q["signal"],           # overall gain for signal (already computed)
-            "E_s": E["signal"],           # overall QBER for signal
-            "Q_d": Q["decoy"],
-            "Q_v": Q["vac"],
-            "Y1_lower": Y1,               # decoy lower bound on single-photon yield
-            "e1_upper": e1,               # decoy upper bound on single-photon error
-            "Q1_lower": Q1,               # single-photon gain lower bound
-            # NEW: add these so every episode CSV/log contains the load-bearing internals
-            "Y1": Y1,
-            "e1": e1,
-            "Q1": Q1,
-            "Q_s_signal": Q["signal"],
+            "Q_s": Q["signal"], "E_s": E["signal"],
+            "Q_d": Q["decoy"], "Q_v": Q["vac"],
+            "Y1_lower": Y1, "e1_upper": e1, "Q1_lower": Q1,
             "SKR_bits_per_pulse": skr,
             "SKR_bits_per_second": skr * self.pulse_rate
         }
-
-
         if verbose:
             print(f"[Episode {self.episode}] SKR={info['SKR_bits_per_pulse']:.6e} bits/pulse, SKR={info['SKR_bits_per_second']:.3f} bits/s")
         return info
@@ -613,3 +416,35 @@ class QKDSimulator:
             R *= finite_factor
 
         return R
+
+
+# ---------------------------
+# Usage examples (small)
+# ---------------------------
+if __name__ == "__main__":
+    # basic simulator
+    cfg = {
+        "pulses_per_episode": 50000,
+        "mu_signal": 0.5,
+        "mu_decoy": 0.1,
+        "p_signal": 0.7,
+        "p_decoy": 0.2,
+        "p_vac": 0.1,
+        "det_eff": 0.6,
+        "dark_count": 1e-7,
+        "seed": 42
+    }
+    sim = QKDSimulator(cfg)
+
+    # Example 1: time-shift attack (dict form, kept for backward compat)
+    actions = {"Eve": {"type": "time_shift", "attack_prob": 0.2, "shift_frac": 0.3}}
+    info_ts = sim.run_episode(actions=actions, verbose=True)
+    print("Time shift info:", info_ts)
+
+    # Example 2: composite attack using Attack objects directly
+    ts = TimeShiftAttack(attack_prob=0.2, shift_frac=0.3, rng=sim.rng)
+    ir = InterceptResendAttack(intercept_prob=0.01, resend_mu=1.0, rng=sim.rng)
+    dc = DarkCountAttack(extra_dark_prob=1e-6, rng=sim.rng)
+    comp = CompositeAttack([ts, ir, dc], rng=sim.rng)
+    info_comp = sim.run_episode(actions={"Eve": comp}, verbose=True)
+    print("Composite attack info:", info_comp)
