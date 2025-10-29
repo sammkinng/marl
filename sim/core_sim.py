@@ -302,11 +302,21 @@ class QKDSimulator:
         self.max_double_clicks_tolerated = int(c.get("max_double_clicks_tolerated", 1000))
 
     def reset_stats(self):
+        # existing per-label counts (signal/decoy/vac)
         self.counts = {lab: {"clicks": 0, "errors": 0, "total": 0} for lab in self.labels}
-        # add an explicit bucket for pulses Eve resent (so they don't pollute decoy stats)
+        # NEW: bucket for Eve-resend pulses (separate from legitimate labels)
         self.counts["eve_resend"] = {"clicks": 0, "errors": 0, "total": 0}
+        # NEW: keep per-original-label counts of Eve resends (useful to subtract if needed)
+        self.eve_resend_per_label = {lab: {"total": 0, "clicks": 0, "errors": 0} for lab in self.labels}
+        # run-level counters for easy logging
+        self.eve_resend_total = 0
+        self.eve_resend_clicks = 0
+        self.eve_resend_errors = 0
+
+        # existing state
         self.qber_window = deque(maxlen=100000)
         self.episode = 0
+
 
     def sample_label(self) -> Tuple[str, float]:
         r = self.rng.rand()
@@ -516,27 +526,41 @@ class QKDSimulator:
             alice_basis = 0 if self.rng.rand() < self.basis_prob else 1
             bob_basis = 0 if self.rng.rand() < self.basis_prob else 1
             alice_bit = int(self.rng.randint(0, 2))
-            click, detected_bit, is_error,label_override = self.simulate_pulse(mu, alice_basis, alice_bit, bob_basis, eve_action=eve_action)
+
+            # NEW: unpack 4-tuple (simulate_pulse returns label_override now)
+            click, detected_bit, is_error, label_override = self.simulate_pulse(mu, alice_basis, alice_bit, bob_basis, eve_action=eve_action)
+
+            # increment total pulses for the original label (counts["signal"]["total"], etc.)
             self.counts[label]["total"] += 1
-            # sifting: only count when bases match and click occurred
+
+            # Only consider clicks where bases match (sifting)
             if click and alice_basis == bob_basis:
-                # If the attack marked this pulse as an Eve-resend, count it separately and DO NOT
-                # include it in the signal/decoy/vac counts used for decoy estimation.
+                # If attack explicitly marked this pulse as an Eve-resend, count it separately
                 if label_override == "eve_resend":
+                    # route to eve_resend bucket only (do NOT add into counts[label])
                     self.counts["eve_resend"]["total"] += 1
                     self.counts["eve_resend"]["clicks"] += 1
                     if is_error:
                         self.counts["eve_resend"]["errors"] += 1
+                        self.eve_resend_errors += 1
                         self.qber_window.append(1)
                     else:
                         self.qber_window.append(0)
+                    # per-label bookkeeping (how many Eve resends originated from this label)
+                    self.eve_resend_per_label[label]["total"] += 1
+                    self.eve_resend_per_label[label]["clicks"] += 1
+                    # run-level counters
+                    self.eve_resend_total += 1
+                    self.eve_resend_clicks += 1
                 else:
+                    # Normal, legitimate pulse — count under its label
                     self.counts[label]["clicks"] += 1
                     if is_error:
                         self.counts[label]["errors"] += 1
                         self.qber_window.append(1)
                     else:
                         self.qber_window.append(0)
+
 
 
         # compute gains and QBERs
@@ -549,25 +573,37 @@ class QKDSimulator:
             Q[lab] = clicks / tot
             E[lab] = (errs / clicks) if clicks > 0 else 0.0
 
+
         Y1, e1, Q1 = decoy_estimates(self.mu_signal, self.mu_decoy, self.mu_vac, Q["signal"], Q["decoy"], Q["vac"], E["signal"], E["decoy"], E["vac"])
         skr = self.compute_skr(Q["signal"], E["signal"], Q1, e1)
         
         info = {
-            "Q_s": Q["signal"],           # overall gain for signal (already computed)
-            "E_s": E["signal"],           # overall QBER for signal
-            "Q_d": Q["decoy"],
-            "Q_v": Q["vac"],
-            "Y1_lower": Y1,               # decoy lower bound on single-photon yield
-            "e1_upper": e1,               # decoy upper bound on single-photon error
-            "Q1_lower": Q1,               # single-photon gain lower bound
-            # NEW: add these so every episode CSV/log contains the load-bearing internals
-            "Y1": Y1,
-            "e1": e1,
-            "Q1": Q1,
-            "Q_s_signal": Q["signal"],
-            "SKR_bits_per_pulse": skr,
-            "SKR_bits_per_second": skr * self.pulse_rate
-        }
+        "Q_s": Q["signal"],
+        "E_s": E["signal"],
+        "Q_d": Q["decoy"],
+        "Q_v": Q["vac"],
+        "Y1_lower": Y1,
+        "e1_upper": e1,
+        "Q1_lower": Q1,
+        # — explicit internals for logging/diagnosis —
+        "Y1": Y1,
+        "e1": e1,
+        "Q1": Q1,
+        "Q_s_signal": Q["signal"],
+        # Eve-resend stats (per-run)
+        "eve_resend_total": self.eve_resend_total,
+        "eve_resend_clicks": self.eve_resend_clicks,
+        "eve_resend_errors": self.eve_resend_errors,
+        # keep SKR outputs
+        "SKR_bits_per_pulse": skr,
+        "SKR_bits_per_second": skr * self.pulse_rate
+    }
+
+        info["eve_resend_from_signal_total"] = self.eve_resend_per_label["signal"]["total"]
+        info["eve_resend_from_decoy_total"]  = self.eve_resend_per_label["decoy"]["total"]
+        info["eve_resend_from_vac_total"]    = self.eve_resend_per_label["vac"]["total"]
+
+
 
 
         if verbose:

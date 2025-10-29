@@ -29,16 +29,16 @@ attack:
   type: composite
   sub_attacks:
     - type: time_shift
-      attack_prob: 0.3
-      shift_frac: 0.4
+      attack_prob: 0.4
+      shift_frac: 0.6
       timing_qber_delta: 0.01
     - type: intercept_resend
-      intercept_prob: 0.1
-      resend_mu: 0.3
-      resend_eff: 0.5
-      resend_error_prob: 0.25
+      intercept_prob: 0.15
+      resend_mu: 0.5
+      resend_eff: 0.7
+      resend_error_prob: 0.2
     - type: dark_count
-      extra_dark_prob: 5e-5
+      extra_dark_prob: 1e-4
 
 
 # Finite-key / confidence intervals
@@ -52,4 +52,4 @@ sweep_distance_km: [40,50,60]
 # Logging
 log_per_episode: true
 output_dir: './results/'
-results_csv: 'results4.csv'
+results_csv: 'results7.csv'
