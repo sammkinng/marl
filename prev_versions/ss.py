@@ -15,7 +15,7 @@ This module contains only physics & simulation logic.
 
 import numpy as np
 from collections import deque
-from .utils import H2, decoy_estimates
+from ..sim.utils import H2, decoy_estimates
 from typing import Dict, Tuple, Optional, Any, List, Union
 
 # --- Attack framework -------------------------------------------------------
