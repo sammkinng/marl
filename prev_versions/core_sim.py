@@ -14,6 +14,7 @@ This module contains only physics & simulation logic.
 """
 
 import numpy as np
+from numba import njit
 
 from collections import deque
 
@@ -150,7 +151,7 @@ class QKDSimulator:
             return Attack.from_dict(eve_action, self.rng)
         raise ValueError("Unsupported eve_action type")
 
-    def simulate_pulse(self, mu: float, alice_basis: int, alice_bit: int, bob_basis: int, eve_action: Optional[Union[Dict, Attack, List[Attack]]] = None):
+    def __simulate_pulse(self, mu: float, alice_basis: int, alice_bit: int, bob_basis: int, eve_action: Optional[Union[Dict, Attack, List[Attack]]] = None):
         # sample photon number k ~ Poisson(mu)
         k = self.rng.poisson(mu)
         # effective detection efficiency including channel loss
@@ -228,6 +229,376 @@ class QKDSimulator:
 
         return True, detected_bit, is_error, label_override
 
+
+    def simulate_pulse(self, mu: float, alice_basis: int, alice_bit: int, bob_basis: int,
+                    eve_action: Optional[Union[Dict, Attack, List[Attack]]] = None):
+        """
+        Wrapper that uses a Numba-jitted core when possible (no Attack object present).
+        Returns: click (bool), detected_bit (0/1 or None), is_error (bool), label_override (str or None)
+        """
+        # --- 1) Quick path: if there's an Attack *object* (custom Python instance),
+        # fall back to original scalar implementation (unmodified) to preserve behavior.
+        if isinstance(eve_action, Attack) or isinstance(eve_action, CompositeAttack):
+            # Use original code path (as before): call attack object's modify_state etc.
+            # We'll reuse original implementation exactly — keep for backwards compatibility.
+            # (Original implementation copied here.)
+            # --- BEGIN original code ---
+            k = self.rng.poisson(mu)
+            eff = self.det_eff * self.eta
+            orig_alice_bit = int(alice_bit)
+            attack_obj = self._parse_eve_action(eve_action)
+
+            extra_dark_prob = 0.0
+            source = "Alice"
+            eve_sent_bit = None
+            label_override = None
+
+            if attack_obj is not None:
+                res = attack_obj.modify_state(k=k, eff=eff, alice_basis=alice_basis,
+                                            alice_bit=alice_bit, bob_basis=bob_basis)
+                k = int(res.get("k", k))
+                eff = float(res.get("eff", eff))
+                source = res.get("source", source)
+                extra_dark_prob = float(res.get("extra_dark_prob", 0.0))
+                label_override = res.get("label_override", None)
+                if "eve_bit" in res:
+                    eve_sent_bit = int(res["eve_bit"])
+                timing_qber_delta = float(res.get("timing_qber_delta", 0.0))
+            else:
+                timing_qber_delta = 0.0
+
+            photon_survival_prob = 1.0 - (1.0 - eff) ** k if k > 0 else 0.0
+            click_from_photons = self.rng.rand() < photon_survival_prob if photon_survival_prob > 0 else False
+
+            combined_dark = 1.0 - (1.0 - self.dark_count - extra_dark_prob) ** 2
+            combined_dark = min(max(0.0, combined_dark), 1.0)
+            dark_click = self.rng.rand() < combined_dark
+            click = click_from_photons or dark_click
+
+            if not click:
+                return False, None, False, None
+
+            if click_from_photons:
+                if source == "Eve" and eve_sent_bit is not None:
+                    detected_bit = eve_sent_bit
+                else:
+                    local_qber = min(0.5, max(0.0, self.baseline_qber + timing_qber_delta))
+                    detected_bit = orig_alice_bit if self.rng.rand() > local_qber else 1 - orig_alice_bit
+            else:
+                detected_bit = int(self.rng.randint(0, 2))
+
+            is_error = (detected_bit != orig_alice_bit)
+
+            if alice_basis != bob_basis:
+                if self.rng.rand() < 0.5:
+                    detected_bit = 1 - detected_bit if self.rng.rand() < 0.5 else detected_bit
+                    is_error = (detected_bit != orig_alice_bit)
+                else:
+                    is_error = (detected_bit != orig_alice_bit)
+
+            return True, detected_bit, is_error, label_override
+            # --- END original code ---
+
+        # --- 2) Fast JIT path (most common): no Attack instance, or eve_action is a simple dict/list we pre-apply ---
+        # Pre-apply simple eve_action modifications in Python (so the core gets only numeric values).
+        # Start with defaults:
+        k = self.rng.poisson(mu)
+        eff = self.det_eff * self.eta
+        orig_alice_bit = int(alice_bit)
+
+        extra_dark_prob = 0.0
+        source = "Alice"
+        eve_sent_bit = -1
+        label_override = None
+
+        timing_qber_delta = 0.0
+
+        # If eve_action is a dict/list of dicts, apply simple modifications (same logic used elsewhere)
+        # NOTE: this is a lightweight Python application (cheap compared to numeric core).
+        if eve_action is not None:
+            # allow lists or single dict
+            actions_list = eve_action if isinstance(eve_action, (list, tuple)) else [eve_action]
+            for a in actions_list:
+                t = a.get("type", "none")
+                if t == "time_shift":
+                    ap = float(a.get("attack_prob", 0.0))
+                    sf = float(a.get("shift_frac", 0.0))
+                    tq = float(a.get("timing_qber_delta", 0.0))
+                    if self.rng.rand() < ap:
+                        eff = eff * (1.0 - sf)
+                        timing_qber_delta += tq
+                elif t == "pns":
+                    pns_frac = float(a.get("pns_frac", 0.0))
+                    if k > 1 and self.rng.rand() < pns_frac:
+                        k = max(0, k - 1)
+                elif t == "intercept_resend":
+                    intercept_prob = float(a.get("intercept_prob", 0.0))
+                    resend_eff = float(a.get("resend_eff", 1.0))
+                    resend_error_prob = float(a.get("resend_error_prob", 0.0))
+                    if self.rng.rand() < intercept_prob:
+                        eve_basis = 0 if self.rng.rand() < 0.5 else 1
+                        if eve_basis == alice_basis:
+                            measured_bit = orig_alice_bit
+                        else:
+                            measured_bit = int(self.rng.randint(0, 2))
+                        if self.rng.rand() < resend_error_prob:
+                            measured_bit = 1 - measured_bit
+                        eve_sent_bit = int(measured_bit)
+                        k = 1
+                        eff = eff * resend_eff
+                        source = "Eve"
+                        label_override = "eve_resend"
+                elif t == "dark_count":
+                    extra_dark_prob += float(a.get("extra_dark_prob", 0.0))
+                elif t == "composite":
+                    for s in a.get("sub_attacks", []):
+                        # re-run this loop for sub-attack dict
+                        stype = s.get("type", "none")
+                        # handle subtypes simply (avoid recursion complexity)
+                        if stype == "time_shift":
+                            if self.rng.rand() < float(s.get("attack_prob", 0.0)):
+                                eff = eff * (1.0 - float(s.get("shift_frac", 0.0)))
+                                timing_qber_delta += float(s.get("timing_qber_delta", 0.0))
+                        elif stype == "pns":
+                            if k > 1 and self.rng.rand() < float(s.get("pns_frac", 0.0)):
+                                k = max(0, k - 1)
+                        elif stype == "intercept_resend":
+                            if self.rng.rand() < float(s.get("intercept_prob", 0.0)):
+                                eve_basis = 0 if self.rng.rand() < 0.5 else 1
+                                if eve_basis == alice_basis:
+                                    measured_bit = orig_alice_bit
+                                else:
+                                    measured_bit = int(self.rng.randint(0, 2))
+                                if self.rng.rand() < float(s.get("resend_error_prob", 0.0)):
+                                    measured_bit = 1 - measured_bit
+                                eve_sent_bit = int(measured_bit)
+                                k = 1
+                                eff = eff * float(s.get("resend_eff", 1.0))
+                                source = "Eve"
+                                label_override = "eve_resend"
+                        elif stype == "dark_count":
+                            extra_dark_prob += float(s.get("extra_dark_prob", 0.0))
+                        # else ignore
+        # sample randoms to pass into JIT core
+        r_photon = self.rng.rand()
+        r_dark = self.rng.rand()
+        r_qber = self.rng.rand()
+        r_wrong_choice = self.rng.rand()
+        r_wrong_flip = self.rng.rand()
+        r_rand_bit_int = int(self.rng.randint(0, 2))
+
+        # call jitted core
+        click_flag, detected_bit, is_error_flag, label_flag = self._simulate_pulse_core_jit(
+            k, eff, self.dark_count, extra_dark_prob,
+            self.baseline_qber, orig_alice_bit,
+            alice_basis, bob_basis,
+            eve_sent_bit, 1 if source == "Eve" else 0,
+            timing_qber_delta,
+            r_photon, r_dark, r_qber, r_wrong_choice, r_wrong_flip, r_rand_bit_int
+        )
+
+        if click_flag == 0:
+            return False, None, False, None
+
+        # convert results
+        click = True
+        detected_bit = int(detected_bit)
+        is_error = bool(is_error_flag)
+        # map label_flag or wrapper-set label_override string
+        if label_override is not None:
+            # e.g. set by intercept_resend path above
+            lo = label_override
+        else:
+            lo = "eve_resend" if label_flag == 1 else None
+
+        return click, detected_bit, is_error, lo
+
+
+    @njit(cache=True, fastmath=True)
+    def _simulate_pulse_core_jit(k, eff, dark_count, extra_dark_prob,
+                                baseline_qber, orig_alice_bit,
+                                alice_basis, bob_basis,
+                                eve_sent_bit, source_is_eve,
+                                timing_qber_delta,
+                                r_photon, r_dark, r_qber, r_wrong_choice, r_wrong_flip, r_rand_bit_int):
+        """
+        Numba-jitted scalar core. All inputs are simple numeric types.
+        Returns: click (0/1), detected_bit (0/1 if click else -1), is_error (0/1), label_flag (0 normal, 1 eve_resend)
+        """
+        # photon-induced click probability
+        if k > 0:
+            # (1 - eff)^k
+            one_minus_eff = 1.0 - eff
+            # pow
+            survival = 1.0 - one_minus_eff ** k
+            photon_survival_prob = survival
+        else:
+            photon_survival_prob = 0.0
+
+        click_from_photons = 1 if (r_photon < photon_survival_prob) else 0
+
+        combined_dark = 1.0 - (1.0 - dark_count - extra_dark_prob) ** 2
+        if combined_dark < 0.0:
+            combined_dark = 0.0
+        elif combined_dark > 1.0:
+            combined_dark = 1.0
+
+        dark_click = 1 if (r_dark < combined_dark) else 0
+
+        click_flag = 1 if (click_from_photons == 1 or dark_click == 1) else 0
+
+        if click_flag == 0:
+            return 0, -1, 0, 0
+
+        # Decide detected bit
+        if click_from_photons == 1:
+            if source_is_eve and eve_sent_bit >= 0:
+                detected_bit = eve_sent_bit
+            else:
+                local_qber = baseline_qber + timing_qber_delta
+                if local_qber < 0.0:
+                    local_qber = 0.0
+                elif local_qber > 0.5:
+                    local_qber = 0.5
+                # r_qber in [0,1)
+                if r_qber > local_qber:
+                    detected_bit = orig_alice_bit
+                else:
+                    detected_bit = 1 - orig_alice_bit
+        else:
+            # dark click: use provided random int 0/1
+            detected_bit = int(r_rand_bit_int)
+
+        # Compute is_error against original Alice bit
+        is_error_flag = 1 if (detected_bit != orig_alice_bit) else 0
+
+        # wrong-basis handling
+        label_flag = 0
+        if alice_basis != bob_basis:
+            # if r_wrong_choice < 0.5 -> randomize outcome sometimes
+            if r_wrong_choice < 0.5:
+                # with 50% flip chance
+                if r_wrong_flip < 0.5:
+                    detected_bit = 1 - detected_bit
+                is_error_flag = 1 if (detected_bit != orig_alice_bit) else 0
+            else:
+                is_error_flag = 1 if (detected_bit != orig_alice_bit) else 0
+        # label_flag is left 0; if wrapper set eve_resend, wrapper will override
+        return 1, int(detected_bit), int(is_error_flag), label_flag
+
+
+    def __run_episode(self, actions: Dict = None, verbose: bool = False) -> Dict:
+        """
+        Run one episode (pulses_per_episode). actions: dict containing 'Alice','Bob','Eve' updates (optional).
+        Returns info dict with per-intensity gains and SKR estimate.
+        """
+        self.reset_stats()
+        self.episode += 1
+        # update params if present
+        if actions and "Alice" in actions:
+            A = actions["Alice"]
+            # allow dynamic update of mu and probabilities
+            if "mu_signal" in A: self.mu_signal = float(A["mu_signal"])
+            if "mu_decoy" in A: self.mu_decoy = float(A["mu_decoy"])
+            if "p_signal" in A or "p_decoy" in A or "p_vac" in A:
+                p_sig = float(A.get("p_signal", self.p_signal))
+                p_dec = float(A.get("p_decoy", self.p_decoy))
+                p_vac = float(A.get("p_vac", self.p_vac))
+                s = p_sig + p_dec + p_vac
+                if s > 0:
+                    self.p_signal, self.p_decoy, self.p_vac = p_sig/s, p_dec/s, p_vac/s
+        eve_action = (actions or {}).get("Eve", None)
+
+        # simulate pulses
+        for i in range(self.pulses_per_episode):
+            label, mu = self.sample_label()
+            alice_basis = 0 if self.rng.rand() < self.basis_prob else 1
+            bob_basis = 0 if self.rng.rand() < self.basis_prob else 1
+            alice_bit = int(self.rng.randint(0, 2))
+
+            # NEW: unpack 4-tuple (simulate_pulse returns label_override now)
+            click, detected_bit, is_error, label_override = self.simulate_pulse(mu, alice_basis, alice_bit, bob_basis, eve_action=eve_action)
+
+            # increment total pulses for the original label (counts["signal"]["total"], etc.)
+            self.counts[label]["total"] += 1
+
+            # Only consider clicks where bases match (sifting)
+            if click and alice_basis == bob_basis:
+                # If attack explicitly marked this pulse as an Eve-resend, count it separately
+                if label_override == "eve_resend":
+                    # route to eve_resend bucket only (do NOT add into counts[label])
+                    self.counts["eve_resend"]["total"] += 1
+                    self.counts["eve_resend"]["clicks"] += 1
+                    if is_error:
+                        self.counts["eve_resend"]["errors"] += 1
+                        self.eve_resend_errors += 1
+                        self.qber_window.append(1)
+                    else:
+                        self.qber_window.append(0)
+                    # per-label bookkeeping (how many Eve resends originated from this label)
+                    self.eve_resend_per_label[label]["total"] += 1
+                    self.eve_resend_per_label[label]["clicks"] += 1
+                    # run-level counters
+                    self.eve_resend_total += 1
+                    self.eve_resend_clicks += 1
+                else:
+                    # Normal, legitimate pulse — count under its label
+                    self.counts[label]["clicks"] += 1
+                    if is_error:
+                        self.counts[label]["errors"] += 1
+                        self.qber_window.append(1)
+                    else:
+                        self.qber_window.append(0)
+
+
+
+        # compute gains and QBERs
+        Q = {}
+        E = {}
+        for lab in self.labels:
+            tot = max(1, self.counts[lab]["total"])
+            clicks = self.counts[lab]["clicks"]
+            errs = self.counts[lab]["errors"]
+            Q[lab] = clicks / tot
+            E[lab] = (errs / clicks) if clicks > 0 else 0.0
+
+
+        Y1, e1, Q1 = decoy_estimates(self.mu_signal, self.mu_decoy, self.mu_vac, Q["signal"], Q["decoy"], Q["vac"], E["signal"], E["decoy"], E["vac"])
+        skr = self.compute_skr(Q["signal"], E["signal"], Q1, e1)
+        
+        info = {
+        "Q_s": Q["signal"],
+        "E_s": E["signal"],
+        "Q_d": Q["decoy"],
+        "Q_v": Q["vac"],
+        "Y1_lower": Y1,
+        "e1_upper": e1,
+        "Q1_lower": Q1,
+        # — explicit internals for logging/diagnosis —
+        "Y1": Y1,
+        "e1": e1,
+        "Q1": Q1,
+        "Q_s_signal": Q["signal"],
+        # Eve-resend stats (per-run)
+        "eve_resend_total": self.eve_resend_total,
+        "eve_resend_clicks": self.eve_resend_clicks,
+        "eve_resend_errors": self.eve_resend_errors,
+        # keep SKR outputs
+        "SKR_bits_per_pulse": skr,
+        "SKR_bits_per_second": skr * self.pulse_rate
+    }
+
+        info["eve_resend_from_signal_total"] = self.eve_resend_per_label["signal"]["total"]
+        info["eve_resend_from_decoy_total"]  = self.eve_resend_per_label["decoy"]["total"]
+        info["eve_resend_from_vac_total"]    = self.eve_resend_per_label["vac"]["total"]
+
+
+
+
+        if verbose:
+            print(f"[Episode {self.episode}] SKR={info['SKR_bits_per_pulse']:.6e} bits/pulse, SKR={info['SKR_bits_per_second']:.3f} bits/s")
+        return info
+
     def compute_skr(self, Q_mu, E_mu, Q1, e1, cfg=None):
         """
         Compute the Secure Key Rate (SKR) with optional finite-key correction.
@@ -267,6 +638,71 @@ class QKDSimulator:
             R *= finite_factor
 
         return R
+
+
+    # @njit(parallel=True, fastmath=True)
+    # def _simulate_pulses_numba(
+    #     k_arr, det_eff_arr, dark_count, extra_dark_arr,
+    #     alice_bits, alice_basis_arr, bob_basis_arr,
+    #     eve_sent_bit_arr, source_is_eve_arr,
+    #     baseline_qber, timing_qber_delta_arr,
+    #     rng_vals_photon, rng_vals_dark, rng_vals_qber, rng_vals_random
+    # ):
+    #     """
+    #     Vectorized, JIT-compiled simulation of photon clicks and bit errors.
+    #     All arrays are 1D numpy arrays (float64 or int8/boolean).
+    #     Returns (click_mask, detected_bits, is_error_arr)
+    #     """
+
+    #     n = len(k_arr)
+    #     detected_bits = np.zeros(n, dtype=np.int8)
+    #     is_error_arr = np.zeros(n, dtype=np.int8)
+    #     click_mask = np.zeros(n, dtype=np.bool_)
+
+    #     for i in prange(n):
+    #         k = k_arr[i]
+    #         eff = det_eff_arr[i]
+    #         extra_dark = extra_dark_arr[i]
+
+    #         # photon survival prob
+    #         photon_survival_prob = 0.0
+    #         if k > 0:
+    #             photon_survival_prob = 1.0 - (1.0 - eff) ** k
+
+    #         click_from_photons = rng_vals_photon[i] < photon_survival_prob
+    #         combined_dark = 1.0 - (1.0 - dark_count - extra_dark) ** 2
+    #         combined_dark = min(max(0.0, combined_dark), 1.0)
+    #         dark_click = rng_vals_dark[i] < combined_dark
+
+    #         click = click_from_photons or dark_click
+    #         click_mask[i] = click
+    #         if not click:
+    #             continue
+
+    #         # Decide detected bit
+    #         if click_from_photons:
+    #             if source_is_eve_arr[i] == 1 and eve_sent_bit_arr[i] >= 0:
+    #                 detected_bit = eve_sent_bit_arr[i]
+    #             else:
+    #                 local_qber = baseline_qber + timing_qber_delta_arr[i]
+    #                 if local_qber < 0.0:
+    #                     local_qber = 0.0
+    #                 elif local_qber > 0.5:
+    #                     local_qber = 0.5
+    #                 detected_bit = alice_bits[i] if rng_vals_qber[i] > local_qber else 1 - alice_bits[i]
+    #         else:
+    #             detected_bit = int(rng_vals_random[i] > 0.5)
+
+    #         # wrong-basis randomization
+    #         if alice_basis_arr[i] != bob_basis_arr[i]:
+    #             if rng_vals_random[i] < 0.25:  # ≈50% randomization chance
+    #                 detected_bit = 1 - detected_bit
+
+    #         detected_bits[i] = detected_bit
+    #         is_error_arr[i] = 1 if detected_bit != alice_bits[i] else 0
+
+    #     return click_mask, detected_bits, is_error_arr
+
 
     def run_episode(self, actions: Dict = None, verbose: bool = False) -> Dict:
         """
