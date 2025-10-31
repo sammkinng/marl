@@ -2,7 +2,9 @@
 import os
 import csv
 import numpy as np
-from sim.core_sim import QKDSimulator,TimeShiftAttack,InterceptResendAttack,DarkCountAttack,CompositeAttack
+from sim.attacks import TimeShiftAttack, InterceptResendAttack, DarkCountAttack, CompositeAttack
+from sim.core_sim import QKDSimulator
+
 
 def run_experiment(cfg):
     os.makedirs(cfg["output_dir"], exist_ok=True)
