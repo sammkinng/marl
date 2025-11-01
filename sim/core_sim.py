@@ -31,6 +31,10 @@ class QKDSimulator:
         self._load_parameters()
         self.reset_stats()
 
+    def set_ppe(self, new_ppe):
+        """Dynamically update pulses per episode."""
+        self.pulses_per_episode = int(new_ppe)
+
     def _seed_rng(self, seed):
         self.seed = seed
         self.rng = np.random.RandomState(seed)

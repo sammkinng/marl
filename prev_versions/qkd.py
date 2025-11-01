@@ -9,7 +9,7 @@ from typing import Dict, Optional, Any, List, Union, Tuple
 from numba import njit, prange
 
 # Import your utility functions (assumed available in project)
-from .utils import  decoy_estimates, H2
+from sim.utils import  decoy_estimates, H2
 from sim.attacks import Attack, CompositeAttack
 
 # NOTE: uncomment the imports above and adjust relative paths in your project.
