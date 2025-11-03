@@ -1,15 +1,16 @@
 
 # Simulation parameters
-pulses_per_episode: 50000       # higher for stable statistics
+pulses_per_episode: 5000       # higher for stable statistics
 pulse_rate: 50e6                 # 50 MHz
 
 # Decoy-state parameters
-mu_signal: 0.4
+mu_signal: 0.6
 mu_decoy: 0.1
 mu_vac: 0.0
 p_signal: 0.7
 p_decoy: 0.2
 p_vac: 0.1
+eta: 1
 
 # Channel
 fiber_loss_db_per_km: 0.2
@@ -52,4 +53,4 @@ sweep_distance_km: [40,50,60]
 # Logging
 log_per_episode: true
 output_dir: './results/'
-results_csv: 'results8.csv'
+results_csv: 'results12.csv'

@@ -1,10 +1,10 @@
 import numpy as np
 import gymnasium as gym
 from stable_baselines3 import PPO
-from stable_baselines3.common.env_checker import check_env
+# from stable_baselines3.common.env_checker import check_env
 from stable_baselines3.common.callbacks import BaseCallback,CheckpointCallback
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-import time
+from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize,DummyVecEnv
+# import time
 import os
 from rl.qkd_rl import QKDEnv
 
@@ -121,30 +121,50 @@ if __name__ == "__main__":
     sim_config = yaml.safe_load(open("configs/config.yaml"))
 
 
+    # # Create multiple envs in parallel
+    # def make_env(rank):
+    #     def _init():
+    #         env = AliceSingleAgentEnv(sim_config)
+    #         return env
+    #     return _init
 
-    from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize
+    # n_envs = 8  # adjust based on CPU cores
+    # env = SubprocVecEnv([make_env(i) for i in range(n_envs)])
 
-    # Create multiple envs in parallel
-    def make_env(rank):
-        def _init():
-            env = AliceSingleAgentEnv(sim_config)
-            return env
-        return _init
-
-    n_envs = 8  # adjust based on CPU cores
-    env = SubprocVecEnv([make_env(i) for i in range(n_envs)])
-
-    # Optional normalization
-    env = VecNormalize(env, norm_obs=False, norm_reward=True)
-
-
-
-    # env = AliceSingleAgentEnv(sim_config)
-    # env = DummyVecEnv([lambda: env])
-    # Add this line:
+    # # Optional normalization
     # env = VecNormalize(env, norm_obs=False, norm_reward=True)
 
+
+
+    env = AliceSingleAgentEnv(sim_config)
+    env = DummyVecEnv([lambda: env])
+    # Add this line:
+    env = VecNormalize(env, norm_obs=False, norm_reward=True)
+
     # check_env(env, warn=True,skip_render_check=True)
+
+
+#     sim_actions = {
+#     "Alice": {
+#         "mu_signal": 0.6,  # lower photon number
+#         "mu_decoy": 0.05,
+#         "p_signal": 0.6,
+#         "p_decoy": 0.3,
+#         "p_vac": 0.1
+#     },
+#     "Bob": {
+#         "basis_prob": 0.5,
+#         "detector_gain": 1.0  # keep base efficiency
+#     },
+#     "Eve": {
+#         "type": "none"  # no attack
+#     }
+# }
+
+
+    # info = env.env.sim.run_episode(sim_actions)
+    # print(info["SKR_bits_per_pulse"])
+
 
     # start = time.time()
     # for i in range(1000):
@@ -156,43 +176,78 @@ if __name__ == "__main__":
 
     # print(f"✅ 1000 environment steps took {end - start:.2f} seconds")
 
-    model = PPO(
-        "MlpPolicy",
-        env,
-        verbose=1,
-        learning_rate=3e-4,
-        n_steps=2048,
-        batch_size=64,
-        ent_coef=0.01,
-        gamma=0.99,
-        tensorboard_log="./logs_alice/",
-    )
+    # model = PPO(
+    #     "MlpPolicy",
+    #     env,
+    #     verbose=1,
+    #     learning_rate=3e-4,
+    #     n_steps=2048,
+    #     batch_size=64,
+    #     ent_coef=0.01,
+    #     gamma=0.99,
+    #     tensorboard_log="./logs_alice/",
+    # )
 
-    checkpoint_dir = "./checkpoints/"
-    os.makedirs(checkpoint_dir, exist_ok=True)
+    model = PPO.load("ppo_alice_checkpoint_1000000_steps.zip", env=env)
 
-    checkpoint_callback = CheckpointCallback(
-    save_freq=10000,  # Save every 10,000 timesteps
-    save_path=checkpoint_dir,
-    name_prefix="ppo_alice_checkpoint",  # The name of the saved model
-)
-    dynamic_ppe_callback = DynamicPPECallback(env, start_ppe=5_000, end_ppe=500_000, total_timesteps=1_000_000, verbose=1)
-    dynamic_r_cb=DynamicRewardScaleCallback(env, start_scale=100.0, end_scale=1.0, total_timesteps=1_000_000)
-    callbacks = [checkpoint_callback, dynamic_ppe_callback,dynamic_r_cb]
+    # checkpoint_dir = "./checkpoints/"
+    # os.makedirs(checkpoint_dir, exist_ok=True)
+
+    # checkpoint_callback = CheckpointCallback(
+    # save_freq=10000,  # Save every 10,000 timesteps
+    # save_path=checkpoint_dir,
+    # name_prefix="ppo_alice_checkpoint",  # The name of the saved model
+# )
+
+    # dynamic_ppe_callback = DynamicPPECallback(env, start_ppe=5_000, end_ppe=500_000, total_timesteps=1_000_000, verbose=1)
+    # dynamic_r_cb=DynamicRewardScaleCallback(env, start_scale=100.0, end_scale=1.0, total_timesteps=1_000_000)
+
+    # dynamic_ppe_callback = DynamicPPECallback(env, start_ppe=44600, end_ppe=500_000, total_timesteps=920_000, verbose=1)
+    # dynamic_r_cb=DynamicRewardScaleCallback(env, start_scale=92.08, end_scale=1.0, total_timesteps=920_000)
+   
+
+    # callbacks = [checkpoint_callback, dynamic_ppe_callback,dynamic_r_cb]
     print("Training started... ⏳")
     # cb=ProgressCallback(check_freq=100)
-    model.learn(total_timesteps=1000_000,callback=callbacks)
-    model.save("ppo_alice_qkdnight.zip")
+
+    # model.learn(total_timesteps=1000_000,callback=callbacks)
+
+    # model.learn(total_timesteps=200_000)
+
+    # model.learn(total_timesteps=20_000,callback=callbacks,reset_num_timesteps=False)
+
+    
+
+    # model.save("ppo_alice_qkdtst.zip")
 
     print("✅ Training complete. Model saved as ppo_alice_qkd.zip")
 
     # Test the trained agent
+    # obs = env.reset()
+    # for _ in range(10):
+    #     action, _ = model.predict(obs, deterministic=True)
+    #     obs, reward, done,  info = env.step(action)
+    #     r_mean = np.mean(reward)
+    #     skr_mean = np.mean([i['raw_info'].get('SKR_bits_per_pulse', 0) for i in info])
+    #     print(f"Mean Reward={r_mean:.6f}, Mean SKR={skr_mean:.6f}")
+
     obs = env.reset()
-    for _ in range(10):
+    # for step in range(1000):  # simulate 1000 steps
+    #     action, _ = model.predict(obs, deterministic=True)
+    #     obs, reward, done, info = env.step(action)
+    #     print(f"Step {step}: Reward={reward}, SKR={info[0]['raw_info'].get('SKR_bits_per_pulse', 0)}")
+
+    #     if step % 100 == 0:  # every 100 steps, treat it as a pseudo-episode
+    #         obs = env.reset()
+
+    cum_reward = 0
+    for step in range(1000):
         action, _ = model.predict(obs, deterministic=True)
-        obs, reward, done,  info = env.step(action)
-        r_mean = np.mean(reward)
-        skr_mean = np.mean([i['raw_info'].get('SKR_bits_per_pulse', 0) for i in info])
-        print(f"Mean Reward={r_mean:.6f}, Mean SKR={skr_mean:.6f}")
+        obs, reward, done, info = env.step(action)
+        cum_reward += np.mean(reward)
+        avg_reward = cum_reward / (step + 1)
+        
+        reward_value = float(np.mean(reward))  # or reward.item() if it's a scalar array
+        print(f"Step {step}: Instant Reward={reward_value:.3f}, Running Avg={avg_reward:.3f}")
 
 

@@ -98,13 +98,8 @@ class QKDEnv(gym.Env):
 
 
     def step(self, actions: Dict[str, np.ndarray]) -> Tuple[np.ndarray, Dict[str, float], bool, Dict]:
-        """Run one simulator episode using actions from all agents, with debug timing."""
+        """Run one simulator episode using actions from all agents, with shaped and normalized rewards."""
 
-        # import time
-        # start_total = time.time()
-        print(f"\n[STEP {getattr(self, 'current_step', 0)}] Starting step...")
-
-        # t0 = time.time()
         # --- 1. Alice ---
         a = actions.get("Alice", np.zeros(3, dtype=np.float32))
         mu_signal = float(np.clip(a[0], 0.0, 2.0))
@@ -112,10 +107,8 @@ class QKDEnv(gym.Env):
         p_signal = float(np.clip(a[2], 0.0, 1.0))
         p_decoy = max(0.0, 1.0 - p_signal - 0.1)
         p_vac = max(0.0, 1.0 - p_signal - p_decoy)
-        # print(f"  Alice params computed in {time.time() - t0:.4f}s")
 
         # --- 2. Bob ---
-        # t1 = time.time()
         b = actions.get("Bob", np.array([0.5, 1.0], dtype=np.float32))
         basis_prob = float(np.clip(b[0], 0.0, 1.0))
         detector_gain = float(np.clip(b[1], 0.0, 2.0))
@@ -124,12 +117,11 @@ class QKDEnv(gym.Env):
         base_dark = getattr(self.sim, "dark_count", 1e-6)
         det_eff = min(1.0, base_det_eff * detector_gain)
         dark_count = base_dark * (1.0 + 2.0 * max(0.0, detector_gain - 1.0) ** 2)
-        # print(f"  Bob params computed in {time.time() - t1:.4f}s")
 
         # --- 3. Eve ---
-        # t2 = time.time()
         e = actions.get("Eve", np.zeros(5, dtype=np.float32))
         time_shift_prob, shift_frac, pns_frac, intercept_prob, extra_dark_prob = e
+
         sim_actions = {
             "Alice": {
                 "mu_signal": mu_signal,
@@ -148,10 +140,8 @@ class QKDEnv(gym.Env):
                 ],
             },
         }
-        # print(f"  Eve params built in {time.time() - t2:.4f}s")
 
         # --- Apply Bob params temporarily ---
-        # t3 = time.time()
         prev_det_eff = getattr(self.sim, "det_eff", None)
         prev_dark = getattr(self.sim, "dark_count", None)
         prev_basis = getattr(self.sim, "basis_prob", None)
@@ -159,52 +149,45 @@ class QKDEnv(gym.Env):
         self.sim.det_eff = det_eff
         self.sim.dark_count = dark_count
         self.sim.basis_prob = basis_prob
-        # print(f"  Detector params set in {time.time() - t3:.4f}s")
 
         # --- Run simulator episode ---
-        # t4 = time.time()
         info = self.sim.run_episode(actions=sim_actions, verbose=False)
-        # print(f"  run_episode() took {time.time() - t4:.4f}s")
-
-        # --- Write CSV ---
-        # t5 = time.time()
-        # with open(self.csv_file, "a", newline="") as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow([
-        #         info["SKR_bits_per_second"],
-        #         info["SKR_bits_per_pulse"],
-        #         info["E_s"]
-        #     ])
-        # print(f"  CSV write took {time.time() - t5:.4f}s")
 
         # --- Restore base values ---
-        # t6 = time.time()
         if prev_det_eff is not None:
             self.sim.det_eff = prev_det_eff
         if prev_dark is not None:
             self.sim.dark_count = prev_dark
         if prev_basis is not None:
             self.sim.basis_prob = prev_basis
-        # print(f"  Params restored in {time.time() - t6:.4f}s")
 
         # --- Observation & reward ---
-        # t7 = time.time()
         obs = self._obs_from_info(info)
         skr = float(info.get("SKR_bits_per_pulse", 0.0))
-        rewards = {"Alice": skr, "Bob": skr, "Eve": -skr}
-        # print(f"  Obs/reward built in {time.time() - t7:.4f}s")
 
-        # elapsed = time.time() - start_total
-        # print(f"[STEP {getattr(self, 'current_step', 0)} DONE] Total time {elapsed:.2f}s\n")
+        # --- Reward shaping ---
+        max_skr = 0.01  # set based on typical best SKR
+        normalized_skr = skr / max_skr
 
-        done = False
+        # Reward for valid probabilities
+        reward_valid_probs = 1.0 - abs(p_signal + p_decoy + p_vac - 1.0)
+        # Reward for reasonable mu_signal
+        reward_mu = 1.0 - abs(mu_signal - 0.5) / 0.5  # scaled to ~0-1
+
+        # Combine rewards
+        reward_total = normalized_skr + 0.1 * reward_valid_probs + 0.1 * reward_mu
+        reward_total = float(np.clip(reward_total, 0.0, 2.0))  # clip for stability
+
+        rewards = {"Alice": reward_total, "Bob": reward_total, "Eve": -reward_total}
+
         terminated = False
         truncated = False
         info = {"raw_info": info}
+
         return obs, rewards, terminated, truncated, info
 
 
-    def step(self, actions: Dict[str, np.ndarray]) -> Tuple[np.ndarray, Dict[str, float], bool, Dict]:
+    def __step(self, actions: Dict[str, np.ndarray]) -> Tuple[np.ndarray, Dict[str, float], bool, Dict]:
         """Run one simulator episode using actions from all agents."""
 
         # --- 1. Alice ---
@@ -262,10 +245,10 @@ class QKDEnv(gym.Env):
 
         
 
-        skr_list, qber_list = [], []
+        # skr_list, qber_list = [], []
 
-        skr_list.append(info["SKR_bits_per_second"])
-        qber_list.append(info["E_s"])
+        # skr_list.append(info["SKR_bits_per_second"])
+        # qber_list.append(info["E_s"])
         # with open(self.csv_file, "a", newline="") as f:
         #     writer = csv.writer(f)
         #     writer.writerow([
@@ -284,8 +267,14 @@ class QKDEnv(gym.Env):
         # --- Observation & reward ---
         obs = self._obs_from_info(info)
         skr = float(info.get("SKR_bits_per_pulse", 0.0))
-        skr*=self.reward_scale
-        rewards = {"Alice": skr, "Bob": skr, "Eve": -skr}
+        # skr*=self.reward_scale
+
+        qber = info.get("E_s", 0.0)
+        reward = skr * 1000 - qber   # example
+
+
+
+        rewards = {"Alice": reward, "Bob": reward, "Eve": -reward}
 
         done = False
         extras = {"raw_info": info}
@@ -293,6 +282,8 @@ class QKDEnv(gym.Env):
         truncated = False
         info = {"raw_info": info}
         return obs, rewards, terminated, truncated, info
+
+
 
     def _obs_from_info(self, info: Dict[str, Any]) -> np.ndarray:
         vec = np.array([

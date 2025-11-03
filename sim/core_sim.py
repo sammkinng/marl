@@ -589,6 +589,13 @@ class QKDSimulator:
         info["eve_resend_from_decoy_total"]  = self.eve_resend_per_label["decoy"]["total"]
         info["eve_resend_from_vac_total"]    = self.eve_resend_per_label["vac"]["total"]
 
+        # print(f"Total clicks: {sum([self.counts[l]['clicks'] for l in self.labels])}")
+        # print(f"Sifted clicks: {sum([self.counts[l]['clicks'] for l in self.labels if l != 'eve_resend'])}")
+        # print(f"eff={self.det_eff*self.eta}")
+
+
+
+
         if verbose:
             print(f"[Episode {self.episode}] SKR={info['SKR_bits_per_pulse']:.6e} bits/pulse, SKR={info['SKR_bits_per_second']:.3f} bits/s")
         return info
