@@ -32,6 +32,7 @@ class QKDEnv(gym.Env):
         super().__init__()
         self.sim = QKDSimulator(sim_config)
         self.reward_scale = 100.0
+        self.current_step=0.0
         
         self.sim.pulses_per_episode = sim_config["pulses_per_episode"]
 
@@ -89,6 +90,7 @@ class QKDEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         super().reset(seed=seed)
         self.episode_count += 1
+        self.current_step = 0
         if hasattr(self.sim, "reset_stats"):
             self.sim.reset_stats()
         self.history.clear()
@@ -163,10 +165,11 @@ class QKDEnv(gym.Env):
 
         # --- Observation & reward ---
         obs = self._obs_from_info(info)
-        skr = float(info.get("SKR_bits_per_pulse", 0.0))
+        skr = float(info.get("SKR_bits_per_second", 0.0))
+        skr_per_pulse = float(info.get("SKR_bits_per_pulse", 0.0))
 
         # --- Reward shaping ---
-        max_skr = 0.01  # set based on typical best SKR
+        max_skr = 2e7  # set based on typical best SKR
         normalized_skr = skr / max_skr
 
         # Reward for valid probabilities
@@ -174,116 +177,30 @@ class QKDEnv(gym.Env):
         # Reward for reasonable mu_signal
         reward_mu = 1.0 - abs(mu_signal - 0.5) / 0.5  # scaled to ~0-1
 
-        # Combine rewards
+        # reward_total = np.clip(normalized_skr + 0.1 * reward_valid_probs + 0.1 * reward_mu, 0.0, 3.0)
+
         reward_total = normalized_skr + 0.1 * reward_valid_probs + 0.1 * reward_mu
-        reward_total = float(np.clip(reward_total, 0.0, 2.0))  # clip for stability
+
+
+       
+
 
         rewards = {"Alice": reward_total, "Bob": reward_total, "Eve": -reward_total}
 
-        terminated = False
-        truncated = False
-        info = {"raw_info": info}
 
-        return obs, rewards, terminated, truncated, info
-
-
-    def __step(self, actions: Dict[str, np.ndarray]) -> Tuple[np.ndarray, Dict[str, float], bool, Dict]:
-        """Run one simulator episode using actions from all agents."""
-
-        # --- 1. Alice ---
-        a = actions.get("Alice", np.zeros(3, dtype=np.float32))
-        mu_signal = float(np.clip(a[0], 0.0, 2.0))
-        mu_decoy = float(np.clip(a[1], 0.0, 1.0))
-        p_signal = float(np.clip(a[2], 0.0, 1.0))
-        p_decoy = max(0.0, 1.0 - p_signal - 0.1)
-        p_vac = max(0.0, 1.0 - p_signal - p_decoy)
-
-        # --- 2. Bob ---
-        b = actions.get("Bob", np.array([0.5, 1.0], dtype=np.float32))
-        basis_prob = float(np.clip(b[0], 0.0, 1.0))
-        detector_gain = float(np.clip(b[1], 0.0, 2.0))
-
-        base_det_eff = getattr(self.sim, "det_eff", 0.1)
-        base_dark = getattr(self.sim, "dark_count", 1e-6)
-        det_eff = min(1.0, base_det_eff * detector_gain)
-        dark_count = base_dark * (1.0 + 2.0 * max(0.0, detector_gain - 1.0) ** 2)
-
-        # --- 3. Eve ---
-        e = actions.get("Eve", np.zeros(5, dtype=np.float32))
-        time_shift_prob, shift_frac, pns_frac, intercept_prob, extra_dark_prob = e
-
-        sim_actions = {
-            "Alice": {
-                "mu_signal": mu_signal,
-                "mu_decoy": mu_decoy,
-                "p_signal": p_signal,
-                "p_decoy": p_decoy,
-                "p_vac": p_vac,
-            },
-            "Eve": {
-                "type": "composite",
-                "sub_attacks": [
-                    {"type": "time_shift", "attack_prob": float(time_shift_prob), "shift_frac": float(shift_frac), "timing_qber_delta": 0.01},
-                    {"type": "pns", "pns_frac": float(pns_frac)},
-                    {"type": "intercept_resend", "intercept_prob": float(intercept_prob), "resend_eff": 0.8, "resend_error_prob": 0.1},
-                    {"type": "dark_count", "extra_dark_prob": float(extra_dark_prob)},
-                ],
-            },
-        }
-
-        # --- Apply Bob params temporarily ---
-        prev_det_eff = getattr(self.sim, "det_eff", None)
-        prev_dark = getattr(self.sim, "dark_count", None)
-        prev_basis = getattr(self.sim, "basis_prob", None)
-
-        self.sim.det_eff = det_eff
-        self.sim.dark_count = dark_count
-        self.sim.basis_prob = basis_prob
-
-        # --- Run simulator episode ---
-        info = self.sim.run_episode(actions=sim_actions, verbose=False)
-
-        
-
-        # skr_list, qber_list = [], []
-
-        # skr_list.append(info["SKR_bits_per_second"])
-        # qber_list.append(info["E_s"])
-        # with open(self.csv_file, "a", newline="") as f:
-        #     writer = csv.writer(f)
-        #     writer.writerow([
-        #         # distance, mu, seed,
-        #                         info["SKR_bits_per_second"],
-        #                         info["SKR_bits_per_pulse"], info["E_s"]])
-
-        # --- Restore base values ---
-        if prev_det_eff is not None:
-            self.sim.det_eff = prev_det_eff
-        if prev_dark is not None:
-            self.sim.dark_count = prev_dark
-        if prev_basis is not None:
-            self.sim.basis_prob = prev_basis
-
-        # --- Observation & reward ---
-        obs = self._obs_from_info(info)
-        skr = float(info.get("SKR_bits_per_pulse", 0.0))
-        # skr*=self.reward_scale
-
+        # --- Termination logic ---
+        self.current_step += 1
+        max_steps = 100  # can tune this per environment
         qber = info.get("E_s", 0.0)
-        reward = skr * 1000 - qber   # example
+        skr = info.get("SKR_bits_per_pulse", 0.0)
 
+        terminated = skr <= 0 or qber > 0.1  # performance-based
+        truncated = self.current_step >= max_steps  # time-based fallback
 
-
-        rewards = {"Alice": reward, "Bob": reward, "Eve": -reward}
-
-        done = False
-        extras = {"raw_info": info}
-        terminated = False
-        truncated = False
+        done = terminated or truncated
         info = {"raw_info": info}
+
         return obs, rewards, terminated, truncated, info
-
-
 
     def _obs_from_info(self, info: Dict[str, Any]) -> np.ndarray:
         vec = np.array([

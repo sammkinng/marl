@@ -1,6 +1,6 @@
 
 # Simulation parameters
-pulses_per_episode: 5000       # higher for stable statistics
+pulses_per_episode: 100000       # higher for stable statistics
 pulse_rate: 50e6                 # 50 MHz
 
 # Decoy-state parameters
