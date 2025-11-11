@@ -8,7 +8,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 import copy
 
 # === Load model ===
-model = PPO.load("ppo_alice_qkdnbest.zip")  # adjust path
+model = PPO.load("ppo_new_rewasystem_alice_kaggle.zip")  # adjust path
 
 
 # === Base simulator config ===
@@ -108,5 +108,5 @@ for i, param in enumerate(param_sweeps.keys()):
     ax2.legend(loc="upper right")
 
 plt.tight_layout()
-plt.savefig("bestsensitivity_analysis_alice_actions.png")
+plt.savefig("kagglenrssensitivity_analysis_alice_actions.png")
 plt.close()

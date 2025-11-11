@@ -163,30 +163,61 @@ class QKDEnv(gym.Env):
         if prev_basis is not None:
             self.sim.basis_prob = prev_basis
 
-        # --- Observation & reward ---
+        # --- Observation ---
         obs = self._obs_from_info(info)
-        skr = float(info.get("SKR_bits_per_second", 0.0))
-        skr_per_pulse = float(info.get("SKR_bits_per_pulse", 0.0))
 
-        # --- Reward shaping ---
-        max_skr = 2e7  # set based on typical best SKR
-        normalized_skr = skr / max_skr
+        skr_bps = float(info.get("SKR_bits_per_second", 0.0))
+        skr_pp = float(info.get("SKR_bits_per_pulse", 0.0))
+        qber = float(info.get("E_s", 0.0))
 
-        # Reward for valid probabilities
-        reward_valid_probs = 1.0 - abs(p_signal + p_decoy + p_vac - 1.0)
-        # Reward for reasonable mu_signal
-        reward_mu = 1.0 - abs(mu_signal - 0.5) / 0.5  # scaled to ~0-1
+                # === Normalized SKR ===
+        MAX_SKR_BPS = 2e7
+        norm_skr = skr_bps / MAX_SKR_BPS
 
-        # reward_total = np.clip(normalized_skr + 0.1 * reward_valid_probs + 0.1 * reward_mu, 0.0, 3.0)
+        # ========= ALICES SAFE SHAPING =========
 
-        reward_total = normalized_skr + 0.1 * reward_valid_probs + 0.1 * reward_mu
+        # Encourage p_signal high but not force it
+        reward_p_signal = 0.5 * p_signal     # simple positive encouragement
 
+        # Encourage μ_signal around 0.5 (moderate weight)
+        reward_mu_signal = -0.5 * abs(mu_signal - 0.5)
 
-       
+        # Encourage μ_decoy small but gently
+        reward_mu_decoy = -0.3 * abs(mu_decoy - 0.15)
 
+        # Penalize QBER softly
+        reward_qber = -2.0 * qber
 
-        rewards = {"Alice": reward_total, "Bob": reward_total, "Eve": -reward_total}
+        # Very slight penalty for invalid probability sums
+        reward_prob_validity = -0.2 * abs(p_signal + p_decoy + p_vac - 1.0)
 
+        # === Combined Alice reward ===
+        alice_reward = (
+            + 4.0 * norm_skr              # SKR dominates
+            + reward_p_signal             # encourages proper signaling
+            + reward_mu_signal
+            + reward_mu_decoy
+            + reward_qber
+            + reward_prob_validity
+        )
+
+        # Bob same as Alice
+        bob_reward = alice_reward
+
+        # ========= EVE SAFE REWARD =========
+        eve_info = float(info.get("eve_info_gain", 0.0))
+
+        eve_reward = (
+            + 1.0 * eve_info              # encourage attacks
+            + 1.0 * qber                  # increase error
+            - 2.0 * (skr_pp == 0)         # avoid killing SKR completely
+        )
+
+        rewards = {
+            "Alice": float(alice_reward),
+            "Bob": float(bob_reward),
+            "Eve": float(eve_reward),
+        }
 
         # --- Termination logic ---
         self.current_step += 1

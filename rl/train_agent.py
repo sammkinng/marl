@@ -37,7 +37,7 @@ class DynamicPPECallback(BaseCallback):
 # Create multiple envs in parallel
 def make_env(rank):
     def _init():
-        # env = EveSingleAgentEnv(sim_config)
+        env = EveSingleAgentEnv(sim_config)
         # env = AliceSingleAgentEnv(sim_config)
         return env
     return _init
@@ -54,12 +54,7 @@ if __name__ == "__main__":
     # env = EveSingleAgentEnv(sim_config)
     env = AliceSingleAgentEnv(sim_config)
     env = DummyVecEnv([lambda: env])
-    # # Add this line:
-    # env = VecNormalize(env, norm_obs=False, norm_reward=True)
-
-    # check_env(env, warn=True,skip_render_check=True)
-
-
+    
 
     # model = PPO(
     #     "MlpPolicy",
@@ -73,8 +68,8 @@ if __name__ == "__main__":
     #     tensorboard_log="./logs_eve/",
     # )
 
-    # model = PPO.load("ppo_eve.zip", env=env)
-    model = PPO.load("ppo_alice_qkdnbest.zip", env=env)
+    # model = PPO.load("ppo_new_rewasystem_eve.zip", env=env)
+    model = PPO.load("ppo_new_rewasystem_alice_kaggle.zip", env=env)
     # model.ent_coef = 0.03   # or slightly higher
 
     # checkpoint_dir = "./checkpoints/"
@@ -93,7 +88,7 @@ if __name__ == "__main__":
 
     # callbacks = [checkpoint_callback, dynamic_ppe_callback,dynamic_r_cb]
 
-    # print("Training started... ⏳")
+    print("Training started... ⏳")
     # cb=ProgressCallback(check_freq=100)
 
     # model.learn(total_timesteps=1000_000)
@@ -104,9 +99,9 @@ if __name__ == "__main__":
 
 
 
-    # model.save("ppo_eve.zip")
+    # model.save("ppo_new_rewasystem_eve.zip")
 
-    # print("✅ Training complete. Model saved as ppo_eve.zip")
+    print("✅ Training complete. Model saved as ppo_eve.zip")
 
     # Test the trained agent
     obs = env.reset()
