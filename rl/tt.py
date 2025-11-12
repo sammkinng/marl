@@ -3,7 +3,7 @@ import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
 
 # ====== Import your environment ======
-from rl.agents.train_alice import AliceSingleAgentEnv
+from rl.agents.alice import AliceSingleAgentEnv
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 

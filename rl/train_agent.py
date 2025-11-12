@@ -3,13 +3,13 @@ from stable_baselines3.common.vec_env import SubprocVecEnv, VecNormalize,DummyVe
 
 import yaml
 import numpy as np
-from rl.agents.train_alice import AliceSingleAgentEnv
+from rl.agents.alice import AliceSingleAgentEnv
 # from stable_baselines3.common.env_checker import check_env
 
 from stable_baselines3.common.callbacks import BaseCallback
 from stable_baselines3 import PPO
 
-from rl.agents.train_eve import EveSingleAgentEnv
+from rl.agents.eve import EveSingleAgentEnv
 
 
 sim_config = yaml.safe_load(open("configs/config.yaml"))
@@ -37,8 +37,8 @@ class DynamicPPECallback(BaseCallback):
 # Create multiple envs in parallel
 def make_env(rank):
     def _init():
-        env = EveSingleAgentEnv(sim_config)
-        # env = AliceSingleAgentEnv(sim_config)
+        # env = EveSingleAgentEnv(sim_config)
+        env = AliceSingleAgentEnv(sim_config)
         return env
     return _init
 
@@ -69,7 +69,7 @@ if __name__ == "__main__":
     # )
 
     # model = PPO.load("ppo_new_rewasystem_eve.zip", env=env)
-    model = PPO.load("ppo_new_rewasystem_alice_kaggle.zip", env=env)
+    model = PPO.load("ppo_alice_qkdnbest.zip", env=env)
     # model.ent_coef = 0.03   # or slightly higher
 
     # checkpoint_dir = "./checkpoints/"
@@ -99,7 +99,7 @@ if __name__ == "__main__":
 
 
 
-    # model.save("ppo_new_rewasystem_eve.zip")
+    # model.save("ppo_jsttst.zip")
 
     print("✅ Training complete. Model saved as ppo_eve.zip")
 

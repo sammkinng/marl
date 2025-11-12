@@ -1,19 +1,19 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from stable_baselines3 import PPO
-from rl.agents.train_alice import AliceSingleAgentEnv
+from rl.agents.alice import AliceSingleAgentEnv
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 
 import copy
 
 # === Load model ===
-model = PPO.load("ppo_new_rewasystem_alice_kaggle.zip")  # adjust path
+model = PPO.load("ppo_supernrs.zip")  # adjust path
 
 
 # === Base simulator config ===
 base_cfg = {
-    "pulses_per_episode": 100000,
+    "pulses_per_episode": 1000,
     "output_dir": "./results",
     "results_csv": "test_results.csv",
     "fiber_loss_db_per_km": 0.2,
