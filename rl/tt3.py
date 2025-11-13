@@ -31,7 +31,7 @@ base_env = VecNormalize.load(VECNORM, base_env)
 base_env.training = False
 base_env.norm_reward = False
 
-model = PPO.load("ppo_alice_qkdnbest.zip")
+model = PPO.load(MODEL_PATH,env=base_env)
 
 param_sweeps = {
     "distance_km": np.linspace(10, 120, 10),
