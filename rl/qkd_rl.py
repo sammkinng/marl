@@ -38,8 +38,8 @@ class QKDEnv(gym.Env):
 
         # Define action spaces
         self.alice_action_space = spaces.Box(
-            low=np.array([0.0, 0.0, 0.0]),   # mu_signal, mu_decoy, p_signal
-            high=np.array([2.0, 1.0, 1.0]),
+            low=np.array([0.05, 0.01, 0.0]),   # mu_signal, mu_decoy, p_signal
+            high=np.array([0.9, 1.0, 1.0]),
             dtype=np.float32
         )
         self.bob_action_space = spaces.Box(
@@ -104,7 +104,7 @@ class QKDEnv(gym.Env):
 
         # --- 1. Alice ---
         a = actions.get("Alice", np.zeros(3, dtype=np.float32))
-        mu_signal = float(np.clip(a[0], 0.0, 2.0))
+        mu_signal = float(np.clip(a[0], 0.05, 0.9))
         mu_decoy = float(np.clip(a[1], 0.0, 1.0))
         p_signal = float(np.clip(a[2], 0.0, 1.0))
         p_decoy = max(0.0, 1.0 - p_signal - 0.1)
@@ -132,15 +132,16 @@ class QKDEnv(gym.Env):
                 "p_decoy": p_decoy,
                 "p_vac": p_vac,
             },
-            "Eve": {
-                "type": "composite",
-                "sub_attacks": [
-                    {"type": "time_shift", "attack_prob": float(time_shift_prob), "shift_frac": float(shift_frac), "timing_qber_delta": 0.01},
-                    {"type": "pns", "pns_frac": float(pns_frac)},
-                    {"type": "intercept_resend", "intercept_prob": float(intercept_prob), "resend_eff": 0.8, "resend_error_prob": 0.1},
-                    {"type": "dark_count", "extra_dark_prob": float(extra_dark_prob)},
-                ],
-            },
+            "Eve":None
+            # "Eve": {
+            #     "type": "composite",
+            #     "sub_attacks": [
+            #         {"type": "time_shift", "attack_prob": float(time_shift_prob), "shift_frac": float(shift_frac), "timing_qber_delta": 0.01},
+            #         {"type": "pns", "pns_frac": float(pns_frac)},
+            #         {"type": "intercept_resend", "intercept_prob": float(intercept_prob), "resend_eff": 0.8, "resend_error_prob": 0.1},
+            #         {"type": "dark_count", "extra_dark_prob": float(extra_dark_prob)},
+            #     ],
+            # },
         }
 
         # --- Apply Bob params temporarily ---
@@ -148,9 +149,9 @@ class QKDEnv(gym.Env):
         prev_dark = getattr(self.sim, "dark_count", None)
         prev_basis = getattr(self.sim, "basis_prob", None)
 
-        self.sim.det_eff = det_eff
-        self.sim.dark_count = dark_count
-        self.sim.basis_prob = basis_prob
+        # self.sim.det_eff = det_eff
+        # self.sim.dark_count = dark_count
+        # self.sim.basis_prob = basis_prob
 
         # --- Run simulator episode ---
         info = self.sim.run_episode(actions=sim_actions, verbose=False)
@@ -171,36 +172,36 @@ class QKDEnv(gym.Env):
         qber = float(info.get("E_s", 0.0))
 
                 # === Normalized SKR ===
-        MAX_SKR_BPS = 2e7
+        MAX_SKR_BPS = 3e4
         norm_skr = skr_bps / MAX_SKR_BPS
 
-        # ========= ALICES SAFE SHAPING =========
+        # # ========= ALICES SAFE SHAPING =========
 
-        # Encourage p_signal high but not force it
-        reward_p_signal = 0.5 * p_signal     # simple positive encouragement
+        # # Encourage p_signal high but not force it
+        # reward_p_signal = 0.5 * p_signal     # simple positive encouragement
 
-        # Encourage μ_signal around 0.5 (moderate weight)
-        reward_mu_signal = -0.5 * abs(mu_signal - 0.5)
+        # # Encourage μ_signal around 0.5 (moderate weight)
+        # reward_mu_signal = -0.5 * abs(mu_signal - 0.5)
 
-        # Encourage μ_decoy small but gently
-        reward_mu_decoy = -0.3 * abs(mu_decoy - 0.15)
+        # # Encourage μ_decoy small but gently
+        # reward_mu_decoy = -0.3 * abs(mu_decoy - 0.15)
 
-        # Penalize QBER softly
-        reward_qber = -2.0 * qber
+        # # Penalize QBER softly
+        # reward_qber = -2.0 * qber
 
-        # Very slight penalty for invalid probability sums
-        reward_prob_validity = -0.2 * abs(p_signal + p_decoy + p_vac - 1.0)
+        # # Very slight penalty for invalid probability sums
+        # reward_prob_validity = -0.2 * abs(p_signal + p_decoy + p_vac - 1.0)
 
-        # === Combined Alice reward ===
-        alice_reward = (
-            + 4.0 * norm_skr              # SKR dominates
-            + reward_p_signal             # encourages proper signaling
-            + reward_mu_signal
-            + reward_mu_decoy
-            + reward_qber
-            + reward_prob_validity
-        )
-
+        # # === Combined Alice reward ===
+        # alice_reward = (
+        #     + 4.0 * norm_skr              # SKR dominates
+        #     + reward_p_signal             # encourages proper signaling
+        #     + reward_mu_signal
+        #     + reward_mu_decoy
+        #     + reward_qber
+        #     + reward_prob_validity
+        # )
+        alice_reward=norm_skr-10*qber
         # Bob same as Alice
         bob_reward = alice_reward
 

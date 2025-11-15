@@ -35,6 +35,46 @@ class QKDSimulator:
         """Dynamically update pulses per episode."""
         self.pulses_per_episode = int(new_ppe)
 
+        # ===============================
+    # Dynamic parameter control (for RL tests)
+    # ===============================
+
+    def set_fiber_length(self, L_km: float):
+        """
+        Dynamically adjust channel transmittance based on fiber length.
+        Updates self.eta accordingly using fiber loss coefficient in cfg.
+        """
+        alpha_db_per_km = float(self.cfg.get("fiber_loss_db_per_km", 0.2))
+        self.cfg["distance_km"] = float(L_km)
+        self.eta = 10 ** (-alpha_db_per_km * L_km / 10.0)
+
+    def get_fiber_length(self) -> float:
+        """Return the current fiber length in km."""
+        return float(self.cfg.get("distance_km", 0.0))
+
+    def set_detector_efficiency(self, eta_det: float):
+        """Set detector quantum efficiency (0–1)."""
+        self.det_eff = float(np.clip(eta_det, 0.0, 1.0))
+        self.cfg["det_eff"] = self.det_eff
+
+    def get_detector_efficiency(self) -> float:
+        """Return current detector efficiency."""
+        return float(self.det_eff)
+
+    def set_dark_count(self, dc_prob: float):
+        """Set dark count probability per detector per pulse."""
+        self.dark_count = float(np.clip(dc_prob, 0.0, 1.0))
+        self.cfg["dark_count"] = self.dark_count
+
+    def get_dark_count(self) -> float:
+        """Return dark count probability."""
+        return float(self.dark_count)
+
+    def set_distance_and_recompute_eta(self, L_km: float):
+        """Convenience alias for backward compatibility."""
+        self.set_fiber_length(L_km)
+
+
     def _seed_rng(self, seed):
         self.seed = seed
         self.rng = np.random.RandomState(seed)

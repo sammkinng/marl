@@ -68,8 +68,25 @@ if __name__ == "__main__":
     #     tensorboard_log="./logs_eve/",
     # )
 
+    import os
+    import copy
+
+    LOGDIR = "./logs_alice"
+    MODEL_PATH = os.path.join(LOGDIR, "best_model.zip")
+    VECNORM   = os.path.join(LOGDIR, "vecnormalize_alice.pkl")
+
+    # Load env & stats
+    base_env = DummyVecEnv([lambda: AliceSingleAgentEnv(copy.deepcopy(sim_config))])
+    base_env = VecNormalize.load(VECNORM, base_env)
+    base_env.training = False
+    base_env.norm_reward = False
+
+    model = PPO.load(MODEL_PATH,env=base_env)
+
+
+
     # model = PPO.load("ppo_new_rewasystem_eve.zip", env=env)
-    model = PPO.load("ppo_new_rewasystem_alice_kaggle.zip", env=env)
+    # model = PPO.load("logs_alice/best_model.zip", env=env)
     # model.ent_coef = 0.03   # or slightly higher
 
     # checkpoint_dir = "./checkpoints/"
@@ -88,7 +105,7 @@ if __name__ == "__main__":
 
     # callbacks = [checkpoint_callback, dynamic_ppe_callback,dynamic_r_cb]
 
-    print("Training started... ⏳")
+    # print("Training started... ⏳")
     # cb=ProgressCallback(check_freq=100)
 
     # model.learn(total_timesteps=1000_000)
@@ -101,11 +118,11 @@ if __name__ == "__main__":
 
     # model.save("ppo_new_rewasystem_eve.zip")
 
-    print("✅ Training complete. Model saved as ppo_eve.zip")
+    # print("✅ Training complete. Model saved as ppo_eve.zip")
 
     # Test the trained agent
     obs = env.reset()
-    for _ in range(10):
+    for _ in range(100):
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done,  info = env.step(action)
         r_mean = np.mean(reward)

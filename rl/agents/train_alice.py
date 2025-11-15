@@ -1,6 +1,6 @@
 import numpy as np
 import gymnasium as gym
-from rl.qkd_rl import QKDEnv
+from rl.qkdenv import QKDEnv
 
 class AliceSingleAgentEnv(gym.Env):
     """
@@ -19,9 +19,6 @@ class AliceSingleAgentEnv(gym.Env):
     
     def set_ppe(self, new_ppe):
         self.env.set_ppe(new_ppe)
-
-    def set_reward_scale(self, new_scale):
-        self.env.set_reward_scale(new_scale)
 
     def reset(self, *, seed=None, options=None):
         obs, _ = self.env.reset(seed=seed, options=options)

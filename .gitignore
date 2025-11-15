@@ -11,3 +11,5 @@ __pycache__
 .env.*
 logs_alice/
 checkpoints
+simulation_cache.csv
+simulation_cache.csv.lock

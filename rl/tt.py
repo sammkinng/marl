@@ -4,11 +4,35 @@ from stable_baselines3 import PPO
 
 # ====== Import your environment ======
 from rl.agents.train_alice import AliceSingleAgentEnv
-from stable_baselines3.common.vec_env import DummyVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv,VecNormalize
 
+import os
+import copy
 
+SIM_CFG = {
+    "pulses_per_episode": 100000,
+    "output_dir": "./results",
+    "results_csv": "alice_results.csv",
+    "fiber_loss_db_per_km": 0.2,
+    "distance_km": 50.0,
+    "det_eff": 0.2,
+    "dark_count": 1e-6,
+    "baseline_qber": 0.01,
+}
 # ====== Load trained PPO model ======
-model = PPO.load("ppo_alice_qkdppp100k.zip")  # adjust path
+# model = PPO.load("ppo_alice_qkdppp100k.zip")  # adjust path
+
+LOGDIR = "./logs_alice"
+MODEL_PATH = os.path.join(LOGDIR, "ppo_alice.zip")
+VECNORM   = os.path.join(LOGDIR, "vecnormalize_alice.pkl")
+
+# Load env & stats
+base_env = DummyVecEnv([lambda: AliceSingleAgentEnv(copy.deepcopy(SIM_CFG))])
+base_env = VecNormalize.load(VECNORM, base_env)
+base_env.training = False
+base_env.norm_reward = False
+
+model = PPO.load(MODEL_PATH,env=base_env)
 
 # ====== Helper function to evaluate ======
 def evaluate_model(env, model, n_episodes=5):
@@ -83,5 +107,5 @@ for i, (param, (vals, skr, _)) in enumerate(results.items(), 1):
     plt.grid(True)
 
 plt.tight_layout()
-plt.savefig("sensitivity_analysis_alice2.png")
+plt.savefig("sensitivity_analysis_aliceummmmm.png")
 plt.close()
