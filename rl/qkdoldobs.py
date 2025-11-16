@@ -60,12 +60,13 @@ class QKDEnv(gym.Env):
             dtype=np.float32,
         )
 
-        # Eve: placeholder 5-dim continuous vector for composite attacks
+        # Eve (Option E1): 4D logits for attack probabilities + dark boost strength
         self.eve_action_space = spaces.Box(
-            low=np.array([0.0, 0.0, 0.0, 0.0, 0.0], dtype=np.float32),
-            high=np.array([1.0, 1.0, 1.0, 1.0, 1e-3], dtype=np.float32),
+            low=np.array([-5.0, -5.0, -5.0, -5.0], dtype=np.float32),
+            high=np.array([5.0, 5.0, 5.0, 5.0], dtype=np.float32),
             dtype=np.float32,
         )
+
 
         self.action_space = {
             "Alice": self.alice_action_space,
@@ -73,21 +74,26 @@ class QKDEnv(gym.Env):
             "Eve": self.eve_action_space,
         }
 
-        # ---------------------------
-        # Observation space (Markov-safe)
-        # [detection_rate, qber, Y0_est, Y1_lower, e1_upper] all normalized 0..1
-        # ---------------------------
-        obs_low = np.zeros(5, dtype=np.float32)
-        obs_high = np.ones(5, dtype=np.float32)
+         # Observation space: [SKR_pp, Q_s, E_s, Y1, e1, Q1]
+        obs_low  = np.zeros(6, dtype=np.float32)
+        obs_high = np.array([10.0, 1.0, 0.5, 1.0, 0.5, 1.0], dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
-
-        # Logging / output
-        # os.makedirs(self.cfg["output_dir"], exist_ok=True)
-        # self.csv_file = os.path.join(self.cfg["output_dir"], self.cfg["results_csv"])
-
         # Reward scaling constant (tunable)
         self.MAX_SKR_BPS = 3e4  # used to normalize skr_bps to ~0..1
 
+    def _obs_from_info(self, info: Dict[str, Any]) -> np.ndarray:
+        vec = np.array([
+            float(info.get("SKR_bits_per_pulse", 0.0)),
+            float(info.get("Q_s", 0.0)),
+            float(info.get("E_s", 0.0)),
+            float(info.get("Y1", 0.0)),
+            float(info.get("e1", 0.0)),
+            float(info.get("Q1", 0.0)),
+        ], dtype=np.float32)
+        self.history.append(vec)
+        if len(self.history) > self.history_len:
+            self.history.pop(0)
+        return np.mean(np.stack(self.history, axis=0), axis=0)
     # ---------------------------
     # Helpers: math transforms
     # ---------------------------
@@ -176,19 +182,19 @@ class QKDEnv(gym.Env):
         # time_shift_prob, shift_frac, pns_frac, intercept_prob, extra_dark_prob = tuple(e)
 
 
-        # e = actions.get("Eve", np.zeros(4, dtype=np.float32))
-        # raw_ir, raw_pns, raw_ts, raw_dark = map(float, e)
+        e = actions.get("Eve", np.zeros(4, dtype=np.float32))
+        raw_ir, raw_pns, raw_ts, raw_dark = map(float, e)
 
-        # # Softmax for attack-type probabilities
-        # logits = np.array([raw_ir, raw_pns, raw_ts], dtype=np.float32)
-        # exp_logits = np.exp(logits - np.max(logits))
-        # p = exp_logits / np.sum(exp_logits)
-        # p_ir, p_pns, p_ts = p.tolist()
+        # Softmax for attack-type probabilities
+        logits = np.array([raw_ir, raw_pns, raw_ts], dtype=np.float32)
+        exp_logits = np.exp(logits - np.max(logits))
+        p = exp_logits / np.sum(exp_logits)
+        p_ir, p_pns, p_ts = p.tolist()
 
-        # # Sigmoid for dark-boost
-        # dark_boost = 1.0 / (1.0 + np.exp(-raw_dark))
-        # max_extra_dark = 5e-6
-        # extra_dark_prob = dark_boost * max_extra_dark
+        # Sigmoid for dark-boost
+        dark_boost = 1.0 / (1.0 + np.exp(-raw_dark))
+        max_extra_dark = 5e-6
+        extra_dark_prob = dark_boost * max_extra_dark
 
 
         # ---------------------------
@@ -205,6 +211,14 @@ class QKDEnv(gym.Env):
             # Currently not passing Eve composite attack object by default.
             "Eve": None
         }
+
+        # sim_actions["Alice"]={
+        #         "mu_signal": 0.6,
+        #         "mu_decoy": 0.1,
+        #         "p_signal": 0.6,
+        #         "p_decoy": 0.3,
+        #         "p_vac": 0.1,
+        #     }
 
 #         sim_actions["Eve"] = {"type": "composite",
 #                                "sub_attacks":[
@@ -259,9 +273,10 @@ class QKDEnv(gym.Env):
         alice_reward = float(norm_skr - 10.0 * qber)
         bob_reward = alice_reward
 
-        # Eve: incentive to increase information / errors while not trivially killing SKR
-        eve_info = float(info.get("eve_info_gain", 0.0))
-        eve_reward = float(eve_info + 1.0 * qber - 0.5 * norm_skr)
+        eve_reward = (
+            10.0* qber
+            + (1.0 - norm_skr) * 2.0
+        )
 
         rewards = {
             "Alice": alice_reward,
@@ -273,35 +288,13 @@ class QKDEnv(gym.Env):
         # 7) Termination / truncation
         # ---------------------------
         self.current_step += 1
-        terminated = (skr_pp <= 0.0) or (qber > 0.11)
+        terminated = (skr_pp <= 0.0) or (qber > 0.12)
         truncated = self.current_step >= 100
 
         # include raw sim info for debugging
         info_out = {"raw_info": info, "alice_params": sim_actions["Alice"]}
 
         return obs, rewards, terminated, truncated, info_out
-
-    def _obs_from_info(self, info: Dict[str, Any]) -> np.ndarray:
-        """
-        Extract step-level Markov-safe statistics from simulator info:
-          detection_rate, qber (E_s), Y0_est, Y1_lower, e1_upper
-        Fall back to safe defaults if not present.
-        Keep a short history and return the mean to smooth noise.
-        """
-        detection_rate = float(info.get("detection_rate", 0.0))
-        qber = float(info.get("E_s", 0.0))
-        Y0 = float(info.get("Y0", 0.0))
-        Y1_lower = float(info.get("Y1_lower", info.get("Y1", 0.0)))
-        e1_upper = float(info.get("e1_upper", info.get("e1", 0.0)))
-
-        vec = np.array([detection_rate, qber, Y0, Y1_lower, e1_upper], dtype=np.float32)
-
-        self.history.append(vec)
-        if len(self.history) > self.history_len:
-            self.history.pop(0)
-
-        stacked = np.stack(self.history, axis=0)
-        return np.mean(stacked, axis=0)
 
     def render(self, mode="human"):
         print(f"[QKDEnv] Episode {self.episode_count} Step {self.current_step}")

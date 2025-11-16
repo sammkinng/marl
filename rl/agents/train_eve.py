@@ -1,6 +1,6 @@
 import gymnasium as gym
 import numpy as np
-from rl.qkd_rl import QKDEnv
+from rl.qkdenv import QKDEnv
 
 
 class EveSingleAgentEnv(gym.Env):
@@ -43,7 +43,7 @@ class EveSingleAgentEnv(gym.Env):
     # ----------------------
     def step(self, action):
         # Alice fixed strategy
-        alice_action = np.array([0.6, 0.1, 0.7], dtype=np.float32)
+        alice_action = np.array([0.6, 0.1, 0.7,0.0], dtype=np.float32)
 
         # Bob fixed strategy
         bob_action = np.array([0.5, 1.0], dtype=np.float32)

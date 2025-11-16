@@ -83,4 +83,4 @@ for i, param in enumerate(param_sweeps.keys()):
     ax.set_title(f"Policy Adaptation vs {param}")
     ax.set_xlabel(param); ax.set_ylabel("Action (normalized)"); ax2.set_ylabel("Mean SKR (bits/pulse)")
     ax.legend(loc="upper left"); ax2.legend(loc="upper right")
-plt.tight_layout(); plt.savefig("sensitivity_alice_ummmm.png"); plt.close()
+plt.tight_layout(); plt.savefig("sensitivity_alice_ummmmagain.png"); plt.close()

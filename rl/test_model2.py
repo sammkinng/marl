@@ -136,7 +136,7 @@ plt.xlabel("Fiber Length (km)")
 plt.ylabel("Mean SKR (bps or bits/pulse)")
 plt.title("SKR vs Fiber Length")
 plt.grid(True)
-plt.savefig("skr_vs_distanceummmm.png")
+plt.savefig("skr_vs_distanceummmmagain.png")
 
 plt.figure()
 plt.plot(fiber_lengths, mean_qber, marker='o')
@@ -144,7 +144,7 @@ plt.xlabel("Fiber Length (km)")
 plt.ylabel("Mean QBER")
 plt.title("QBER vs Fiber Length")
 plt.grid(True)
-plt.savefig("qber_vs_distanceummmm.png")
+plt.savefig("qber_vs_distanceummmmagain.png")
 
 # ------------------------------
 # 3. Plot Agent's Action Trends vs Distance
@@ -159,7 +159,7 @@ for i in range(n_actions):
     plt.ylabel(f"Action {i+1} value")
     plt.title(f"Action {i+1} trend vs distance")
     plt.grid(True)
-    plt.savefig(f"action{i+1}_vs_distanceummmm.png")
+    plt.savefig(f"action{i+1}_vs_distanceummmmagain.png")
 
 
 
@@ -235,7 +235,7 @@ if skr_det_eff:
     plt.xlabel("Perturbation Δη")
     plt.ylabel("SKR")
     plt.grid(True)
-    plt.savefig("skr_vs_detector_efficiencyummmm.png")
+    plt.savefig("skr_vs_detector_efficiencyummmmagain.png")
 
 
 
@@ -256,7 +256,7 @@ else:
     plt.ylabel("Mean SKR (bits/pulse)")
     plt.grid(True, linestyle='--', alpha=0.6)
     plt.tight_layout()
-    plt.savefig("skr_vs_dark_countummmm.png", dpi=300)
+    plt.savefig("skr_vs_dark_countummmmagain.png", dpi=300)
     plt.show()
 
     # Optional: print numerical results for clarity
@@ -286,7 +286,7 @@ plt.ylabel("SKR (normalized)")
 plt.title("RL vs Theoretical SKR Trend")
 plt.legend()
 plt.grid(True)
-plt.savefig("rl_vs_theory_skrummmm.png")
+plt.savefig("rl_vs_theory_skrummmmagain.png")
 
 print("✅ Physics-alignment tests complete. Plots saved for inspection.")
 
@@ -336,7 +336,7 @@ plt.xlabel("Fiber Length (km)")
 plt.ylabel("Detector Efficiency")
 plt.title("SKR Heatmap: Fiber Length × Detector Efficiency")
 plt.tight_layout()
-plt.savefig("skr_heatmap_length_vs_efficiencyummmm.png")
+plt.savefig("skr_heatmap_length_vs_efficiencyummmmagain.png")
 plt.show()
 
 
@@ -375,6 +375,6 @@ plt.title("RL vs Theoretical Optimal μ vs Distance")
 plt.legend()
 plt.grid(True)
 plt.tight_layout()
-plt.savefig("mu_vs_theoryummmm.png")
+plt.savefig("mu_vs_theoryummmmagain.png")
 plt.show()
 
