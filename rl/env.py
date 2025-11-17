@@ -78,11 +78,26 @@ class QKDEnv(gym.Env):
         # ---------------------------
         obs_low = np.zeros(5, dtype=np.float32)
         obs_high = np.ones(5, dtype=np.float32)
-        self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
+        self.ob_space_alice = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
-        # Logging / output
-        # os.makedirs(self.cfg["output_dir"], exist_ok=True)
-        # self.csv_file = os.path.join(self.cfg["output_dir"], self.cfg["results_csv"])
+        obs_low = np.zeros(5, dtype=np.float32)
+        obs_high = np.ones(5, dtype=np.float32)
+        self.ob_space_bob = spaces.Box(obs_low, obs_high, dtype=np.float32)
+
+        # Eve gets restricted “old obs”
+        # [Q_s, E_s, SKR, Q1_est]
+        self.ob_space_eve = spaces.Box(
+            low=np.zeros(4, dtype=np.float32),
+            high=np.array([1.0, 0.5, 1.0, 1.0], dtype=np.float32),
+        )
+        from gymnasium.spaces import Dict as SpaceDict
+
+        self.observation_space = SpaceDict({
+            "Alice": self.ob_space_alice,
+            "Bob":   self.ob_space_bob,
+            "Eve":   self.ob_space_eve,
+        })
+
 
         # Reward scaling constant (tunable)
         self.MAX_SKR_BPS = 3e4  # used to normalize skr_bps to ~0..1
@@ -93,6 +108,46 @@ class QKDEnv(gym.Env):
     def set_ppe(self, new_ppe):
         self.sim.set_ppe(new_ppe)
 
+    def _eve_obs(self, info: Dict[str, Any]) -> np.ndarray:
+        """Restricted obs for Eve (realistic / no aggregated decoy internals)."""
+        Qs  = info["Q_s"]
+        Es  = info["E_s"]
+        skr = info["SKR_bits_per_pulse"]
+        Q1  = info["Q1"]
+
+        return np.array([Qs, Es, skr, Q1], dtype=np.float32)
+
+    def _alice_obs(self, info: Dict[str, Any]) -> np.ndarray:
+        """
+        Extract step-level Markov-safe statistics from simulator info:
+          detection_rate, qber (E_s), Y0_est, Y1_lower, e1_upper
+        Fall back to safe defaults if not present.
+        Keep a short history and return the mean to smooth noise.
+        """
+        detection_rate = float(info.get("detection_rate", 0.0))
+        qber = float(info.get("E_s", 0.0))
+        Y0 = float(info.get("Y0", 0.0))
+        Y1_lower = float(info.get("Y1_lower", info.get("Y1", 0.0)))
+        e1_upper = float(info.get("e1_upper", info.get("e1", 0.0)))
+
+        return np.array([detection_rate, qber, Y0, Y1_lower, e1_upper], dtype=np.float32)
+
+    def _bob_obs(self, info: Dict[str, Any]) -> np.ndarray:
+        """
+        Extract step-level Markov-safe statistics from simulator info:
+          detection_rate, qber (E_s), Y0_est, Y1_lower, e1_upper
+        Fall back to safe defaults if not present.
+        Keep a short history and return the mean to smooth noise.
+        """
+        detection_rate = float(info.get("detection_rate", 0.0))
+        qber = float(info.get("E_s", 0.0))
+        Y0 = float(info.get("Y0", 0.0))
+        Y1_lower = float(info.get("Y1_lower", info.get("Y1", 0.0)))
+        e1_upper = float(info.get("e1_upper", info.get("e1", 0.0)))
+
+        return np.array([detection_rate, qber, Y0, Y1_lower, e1_upper], dtype=np.float32)
+
+    
     @staticmethod
     def _sigmoid(x: float) -> float:
         return 1.0 / (1.0 + np.exp(-x))
@@ -113,9 +168,18 @@ class QKDEnv(gym.Env):
         if hasattr(self.sim, "reset_stats"):
             self.sim.reset_stats()
 
-        # Return zero observation initially
-        obs = np.zeros(self.observation_space.shape, dtype=np.float32)
-        return obs, {}
+        dummy_info = {
+            "Q_s": 0.0, "Q_d": 0.0, "Q_v": 0.0,
+            "E_s": 0.0,
+            "Q1":  0.0,
+            "SKR_bits_per_pulse": 0.0,
+        }
+
+        return {
+            "Alice": self._alice_obs(dummy_info),
+            "Bob":   self._bob_obs(dummy_info),
+            "Eve":   self._eve_obs(dummy_info),
+        }, {}
 
     def step(self, actions: Dict[str, np.ndarray]) -> Tuple[np.ndarray, Dict[str, float], bool, Dict]:
         """
@@ -251,7 +315,11 @@ class QKDEnv(gym.Env):
         # ---------------------------
         # 5) Observation: Markov-safe stats
         # ---------------------------
-        obs = self._obs_from_info(info)
+        obs = {
+            "Alice": self._alice_obs(info),
+            "Bob":   self._bob_obs(info),
+            "Eve":   self._eve_obs(info),
+        }
 
         # ---------------------------
         # 6) Rewards (stable shaping)
@@ -272,9 +340,9 @@ class QKDEnv(gym.Env):
 
 
         eve_reward = (
-    + 20.0 * min(qber, QBER_ABORT - ε)   # reward for pushing QBER up to edge
+    + 3.0 * min(qber, QBER_ABORT - ε)   # reward for pushing QBER up to edge
     - 5.0 * (qber >= QBER_ABORT)        # big penalty if she crosses threshold
-    - 5.0 * (norm_skr <= 0.006)                  # penalty for killing channel completely
+    - 2.0 * (norm_skr <= 0.005)                  # penalty for killing channel completely
 )
 
 
@@ -295,28 +363,6 @@ class QKDEnv(gym.Env):
         info_out = {"raw_info": info, "alice_params": sim_actions["Alice"]}
 
         return obs, rewards, terminated, truncated, info_out
-
-    def _obs_from_info(self, info: Dict[str, Any]) -> np.ndarray:
-        """
-        Extract step-level Markov-safe statistics from simulator info:
-          detection_rate, qber (E_s), Y0_est, Y1_lower, e1_upper
-        Fall back to safe defaults if not present.
-        Keep a short history and return the mean to smooth noise.
-        """
-        detection_rate = float(info.get("detection_rate", 0.0))
-        qber = float(info.get("E_s", 0.0))
-        Y0 = float(info.get("Y0", 0.0))
-        Y1_lower = float(info.get("Y1_lower", info.get("Y1", 0.0)))
-        e1_upper = float(info.get("e1_upper", info.get("e1", 0.0)))
-
-        vec = np.array([detection_rate, qber, Y0, Y1_lower, e1_upper], dtype=np.float32)
-
-        self.history.append(vec)
-        if len(self.history) > self.history_len:
-            self.history.pop(0)
-
-        stacked = np.stack(self.history, axis=0)
-        return np.mean(stacked, axis=0)
 
     def render(self, mode="human"):
         print(f"[QKDEnv] Episode {self.episode_count} Step {self.current_step}")
