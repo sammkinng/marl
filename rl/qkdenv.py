@@ -180,12 +180,11 @@ class QKDEnv(gym.Env):
 
         # # Softmax for attack-type probabilities
         logits = np.array([raw_ir, raw_pns, raw_ts], dtype=np.float32)
-        exp_logits = np.exp(logits - np.max(logits))
-        p = exp_logits / np.sum(exp_logits)
+        p=self._softmax(logits)
         p_ir, p_pns, p_ts = p.tolist()
 
         # # Sigmoid for dark-boost
-        dark_boost = 1.0 / (1.0 + np.exp(-raw_dark))
+        dark_boost = self._sigmoid(raw_dark)
         max_extra_dark = 5e-6
         extra_dark_prob = dark_boost * max_extra_dark
 
@@ -259,6 +258,7 @@ class QKDEnv(gym.Env):
         skr_bps = float(info.get("SKR_bits_per_second", 0.0))
         skr_pp = float(info.get("SKR_bits_per_pulse", 0.0))
         qber = float(info.get("E_s", 0.0))
+        eig=float(info.get("eve_info_gain", 0.0))
 
         norm_skr = skr_bps / self.MAX_SKR_BPS
 
@@ -266,16 +266,24 @@ class QKDEnv(gym.Env):
         alice_reward = float(norm_skr - 10.0 * qber)
         bob_reward = alice_reward
 
-        QBER_ABORT = 0.15
+        QBER_ABORT = 0.05
 
-        ε = 0.001     # (or 0.005, 0.02 — depends on tuning)
+        ε = 0.00001     # (or 0.005, 0.02 — depends on tuning)
+        # 20 and 0.006 - 0.0117(w/o norm) with norm 0.02-------------------------0----------.0118 when eig
+#  1e4 and 1.0/0.0001  - 0.0163
+# 1e4 and 10 /0.0001- 0.0191(w/o norm) with 0.0202--------------------------------1----------------(167 in 300k training)
 
-
+# 1e2 + 2+3e2+5e3+0-------0.02(in 300k) ---------------0.0164 with im and 5e5 norm upto 5e3 it was 0------its not saved yet
+# 0.2 soemthing for new ir and 10.0 10.0 3 and 5 and 0(300k)
         eve_reward = (
-    + 20.0 * min(qber, QBER_ABORT - ε)   # reward for pushing QBER up to edge
+            # + (1 - norm_skr) * 2.0
+            +10.0*qber
+            +10.0 * eig                         # reward for info gain
+    + 3.0 * min(qber, QBER_ABORT - ε)   # reward for pushing QBER up to edge
     - 5.0 * (qber >= QBER_ABORT)        # big penalty if she crosses threshold
-    - 5.0 * (norm_skr <= 0.006)                  # penalty for killing channel completely
-)
+    # - 5.0 * (norm_skr <= 0.0001)  
+                    # penalty for killing channel completely
+        )
 
 
         rewards = {
@@ -288,7 +296,7 @@ class QKDEnv(gym.Env):
         # 7) Termination / truncation
         # ---------------------------
         self.current_step += 1
-        terminated = (skr_pp <= 0.0001) or (qber > QBER_ABORT)
+        terminated = (skr_pp <= 0.00001) or (qber > 0.11)
         truncated = self.current_step >= 100
 
         # include raw sim info for debugging

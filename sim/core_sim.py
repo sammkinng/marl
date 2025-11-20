@@ -116,7 +116,7 @@ class QKDSimulator:
         c = self.cfg
         # protocol / pulses
         self.pulses_per_episode = int(c.get("pulses_per_episode", 200000))
-        self.pulse_rate = float(c.get("pulse_rate", 10e6))  # pulses per second for converts
+        self.pulse_rate = float(c.get("pulse_rate", 50e6))  # pulses per second for converts
         # intensities
         self.mu_signal = float(c.get("mu_signal", 0.5))
         self.mu_decoy = float(c.get("mu_decoy", 0.1))
@@ -412,6 +412,10 @@ class QKDSimulator:
             eve_sent_bit_arr = np.full(n, -1, dtype=np.int8)  # -1 means no eve bit
             label_override_arr = np.full(n, "", dtype=object)
             timing_qber_delta_arr = np.zeros(n, dtype=float)
+            # ---- Eve information tracking ----
+            eve_knows_arr = np.zeros(n, dtype=np.int8)     # 1 if Eve knows the bit
+            eve_attempt_arr = np.zeros(n, dtype=np.int8)   # 1 if Eve touched the pulse
+
 
             # --- initialize accumulators for vectorized attacks ---
             extra_dark_arr = np.zeros(n)
@@ -429,10 +433,16 @@ class QKDSimulator:
                     mask = (rng.rand(n) < ap)
                     det_eff_arr[mask] = det_eff_arr[mask] * (1.0 - sf)
                     timing_qber_delta_arr[mask] += tq
+                    eve_attempt_arr[mask] = 1      # Eve interfered
+                    eve_knows_arr[mask] += 0       # She gains no key info
+
                 elif t == "pns":
                     pns_frac = float(a.get("pns_frac", 0.0))
                     mask = (rng.rand(n) < pns_frac) & (k_arr > 1)
                     k_arr[mask] = np.maximum(0, k_arr[mask] - 1)
+                    eve_attempt_arr[mask] = 1   # Eve touched these pulses
+                    eve_knows_arr[mask] = 1     # PNS gives Eve a perfect copy of 1 photon
+
                 elif t == "intercept_resend":
                     intercept_prob = float(a.get("intercept_prob", 0.0))
                     resend_eff = float(a.get("resend_eff", 1.0))
@@ -441,6 +451,7 @@ class QKDSimulator:
                     if mask.any():
                         # Eve chooses random measurement basis per masked pulse
                         eve_basis = (rng.rand(mask.sum()) < 0.5).astype(np.int8)
+                        
                         # For slots where eve_basis == alice_basis -> measured_bit = alice_bit; else random
                         idxs = np.nonzero(mask)[0]
                         for ii_idx, ii in enumerate(idxs):
@@ -453,11 +464,25 @@ class QKDSimulator:
                             if rng.rand() < resend_error_prob:
                                 measured_bit = 1 - measured_bit
                             eve_sent_bit_arr[ii] = measured_bit
+                        eve_sent_bit_arr[ii] = measured_bit
                         # set k=1 for those pulses and reduce eff
                         k_arr[mask] = 1
                         det_eff_arr[mask] = det_eff_arr[mask] * resend_eff
                         source_arr[mask] = "Eve"
                         label_override_arr[mask] = "eve_resend"
+                        eve_attempt_arr[mask] = 1  # Eve touched these pulses
+
+                        # Eve knows bit if she used correct basis (eve_basis == alice_basis)
+                        # Construct mask for correct-basis measurements:
+                        correct_basis_mask = np.zeros(n, dtype=bool)
+                        correct_basis_pulses = np.nonzero(mask)[0]
+
+                        for ii_idx, ii in enumerate(correct_basis_pulses):
+                            if eve_basis[ii_idx] == alice_basis_arr[ii]:
+                                correct_basis_mask[ii] = True
+
+                        eve_knows_arr[correct_basis_mask] = 1
+
                 elif t == "dark_count":
                     extra = float(a.get("extra_dark_prob", 0.0))
                     extra_dark_arr += extra
@@ -546,52 +571,120 @@ class QKDSimulator:
                 # 10) Update counts vectorized
                 # Total pulses per label:
                 # note: counts[label]["total"] increments per original label, independent of clicks
+                # totals = np.bincount(labels_idx, minlength=3)
+                # for idx_label, lab in enumerate(self.labels):
+                #     self.counts[lab]["total"] += int(totals[idx_label])
+
+                # # Now handle sifted events: clicks AND alice_basis == bob_basis
+                # sift_mask = click_mask & (alice_basis_arr == bob_basis_arr)
+                # sift_idxs = np.nonzero(sift_mask)[0]
+                # if sift_idxs.size:
+                #     # Those that were marked as eve_resend go into eve_resend bucket
+                #     eve_resend_idxs = sift_idxs[label_override_arr[sift_idxs] == "eve_resend"]
+                #     if eve_resend_idxs.size:
+                #         self.counts["eve_resend"]["total"] += int(eve_resend_idxs.size)
+                #         self.counts["eve_resend"]["clicks"] += int(eve_resend_idxs.size)
+                #         errs = int(np.sum(is_error_arr[eve_resend_idxs]))
+                #         self.counts["eve_resend"]["errors"] += errs
+                #         self.eve_resend_errors += errs
+                #         self.qber_window.extend(list(is_error_arr[eve_resend_idxs]))
+                #         # per-label bookkeeping: the original label for these indices:
+                #         orig_labels = labels_idx[eve_resend_idxs]
+                #         for lval in [0,1,2]:
+                #             sel = (orig_labels == lval)
+                #             if sel.any():
+                #                 labname = self.labels[lval]
+                #                 self.eve_resend_per_label[labname]["total"] += int(np.sum(sel))
+                #                 self.eve_resend_per_label[labname]["clicks"] += int(np.sum(sel))
+                #         self.eve_resend_total += int(eve_resend_idxs.size)
+                #         self.eve_resend_clicks += int(eve_resend_idxs.size)
+
+                #     # Normal legitimate clicks: those sifted and not eve_resend
+                #     normal_idxs = sift_idxs[label_override_arr[sift_idxs] != "eve_resend"]
+                #     if normal_idxs.size:
+                #         # Count clicks/errors per original label
+                #         orig_labels = labels_idx[normal_idxs]
+                #         for lval in [0,1,2]:
+                #             sel = (orig_labels == lval)
+                #             if sel.any():
+                #                 labname = self.labels[lval]
+                #                 added_clicks = int(np.sum(sel))
+                #                 self.counts[labname]["clicks"] += added_clicks
+                #                 errs = int(np.sum(is_error_arr[normal_idxs][sel]))
+                #                 self.counts[labname]["errors"] += errs
+                #                 # push per-event qber window bits
+                #                 for v in is_error_arr[normal_idxs][sel].tolist():
+                #                     self.qber_window.append(int(v))
+
+                # end vectorized processing
+
+                # 10) Update counts vectorized (corrected)
+                # ---------------------------------------
+
+                # Total pulses per label:
                 totals = np.bincount(labels_idx, minlength=3)
                 for idx_label, lab in enumerate(self.labels):
                     self.counts[lab]["total"] += int(totals[idx_label])
 
-                # Now handle sifted events: clicks AND alice_basis == bob_basis
+
+                # Sifted events: (click & same basis)
                 sift_mask = click_mask & (alice_basis_arr == bob_basis_arr)
                 sift_idxs = np.nonzero(sift_mask)[0]
+
                 if sift_idxs.size:
-                    # Those that were marked as eve_resend go into eve_resend bucket
+
+                    # --- 10A: Eve-resend events ---
                     eve_resend_idxs = sift_idxs[label_override_arr[sift_idxs] == "eve_resend"]
+
                     if eve_resend_idxs.size:
-                        self.counts["eve_resend"]["total"] += int(eve_resend_idxs.size)
+                        # Keep Eve-resend statistics separate
+                        self.counts["eve_resend"]["total"]  += int(eve_resend_idxs.size)
                         self.counts["eve_resend"]["clicks"] += int(eve_resend_idxs.size)
-                        errs = int(np.sum(is_error_arr[eve_resend_idxs]))
-                        self.counts["eve_resend"]["errors"] += errs
-                        self.eve_resend_errors += errs
-                        self.qber_window.extend(list(is_error_arr[eve_resend_idxs]))
-                        # per-label bookkeeping: the original label for these indices:
+
+                        errs = np.sum(is_error_arr[eve_resend_idxs])
+                        self.counts["eve_resend"]["errors"] += int(errs)
+                        self.eve_resend_errors += int(errs)
+                        self.qber_window.extend(is_error_arr[eve_resend_idxs].tolist())
+
+                        # Per-label accounting (signal/decoy/vac)
                         orig_labels = labels_idx[eve_resend_idxs]
-                        for lval in [0,1,2]:
-                            sel = (orig_labels == lval)
+                        for lab_index, labname in enumerate(self.labels):
+                            sel = (orig_labels == lab_index)
                             if sel.any():
-                                labname = self.labels[lval]
-                                self.eve_resend_per_label[labname]["total"] += int(np.sum(sel))
-                                self.eve_resend_per_label[labname]["clicks"] += int(np.sum(sel))
-                        self.eve_resend_total += int(eve_resend_idxs.size)
+                                c = int(np.sum(sel))
+                                self.eve_resend_per_label[labname]["total"] += c
+                                self.eve_resend_per_label[labname]["clicks"] += c
+
+                        # TOTAL Eve resend accounting
+                        self.eve_resend_total  += int(eve_resend_idxs.size)
                         self.eve_resend_clicks += int(eve_resend_idxs.size)
 
-                    # Normal legitimate clicks: those sifted and not eve_resend
-                    normal_idxs = sift_idxs[label_override_arr[sift_idxs] != "eve_resend"]
-                    if normal_idxs.size:
-                        # Count clicks/errors per original label
-                        orig_labels = labels_idx[normal_idxs]
-                        for lval in [0,1,2]:
-                            sel = (orig_labels == lval)
-                            if sel.any():
-                                labname = self.labels[lval]
-                                added_clicks = int(np.sum(sel))
-                                self.counts[labname]["clicks"] += added_clicks
-                                errs = int(np.sum(is_error_arr[normal_idxs][sel]))
-                                self.counts[labname]["errors"] += errs
-                                # push per-event qber window bits
-                                for v in is_error_arr[normal_idxs][sel].tolist():
-                                    self.qber_window.append(int(v))
+                        # *** FIX: Add Eve-resend clicks back into the REAL label’s QBER ***
+                        # This ensures Q_s, Q_d, Q_v include Eve's disturbances
+                        for ii in eve_resend_idxs:
+                            labname = self.labels[labels_idx[ii]]
+                            self.counts[labname]["clicks"] += 1
+                            self.counts[labname]["errors"] += int(is_error_arr[ii])
 
-            # end vectorized processing
+
+                    # --- 10B: Legitimate (non-Eve) sifted events ---
+                    normal_idxs = sift_idxs[label_override_arr[sift_idxs] != "eve_resend"]
+
+                    if normal_idxs.size:
+                        orig_labels = labels_idx[normal_idxs]
+                        for lab_index, labname in enumerate(self.labels):
+                            sel = (orig_labels == lab_index)
+                            if sel.any():
+                                clicks = int(np.sum(sel))
+                                errs   = int(np.sum(is_error_arr[normal_idxs][sel]))
+
+                                self.counts[labname]["clicks"] += clicks
+                                self.counts[labname]["errors"] += errs
+
+                                self.qber_window.extend(
+                                    is_error_arr[normal_idxs][sel].tolist()
+                                )
+
 
         # compute gains and QBERs (same as before)
         Q = {}
@@ -605,6 +698,15 @@ class QKDSimulator:
 
         Y1, e1, Q1 = decoy_estimates(self.mu_signal, self.mu_decoy, self.mu_vac, Q["signal"], Q["decoy"], Q["vac"], E["signal"], E["decoy"], E["vac"])
         skr = self.compute_skr(Q["signal"], E["signal"], Q1, e1)
+
+        eve_total = int(np.sum(eve_attempt_arr))
+        eve_correct = int(np.sum(eve_knows_arr))
+
+        if eve_total > 0:
+            eve_info_gain = eve_correct / eve_total
+        else:
+            eve_info_gain = 0.0
+        # note qs and 1d and y1 2x increased
 
         info = {
             "Q_s": Q["signal"],
@@ -628,6 +730,10 @@ class QKDSimulator:
         info["eve_resend_from_signal_total"] = self.eve_resend_per_label["signal"]["total"]
         info["eve_resend_from_decoy_total"]  = self.eve_resend_per_label["decoy"]["total"]
         info["eve_resend_from_vac_total"]    = self.eve_resend_per_label["vac"]["total"]
+        info["eve_info_gain"] = float(eve_info_gain)
+        info["eve_attacks_total"] = eve_total
+        info["eve_attacks_success"] = eve_correct
+
 
         # print(f"Total clicks: {sum([self.counts[l]['clicks'] for l in self.labels])}")
         # print(f"Sifted clicks: {sum([self.counts[l]['clicks'] for l in self.labels if l != 'eve_resend'])}")

@@ -20,7 +20,7 @@ SIM_CFG = {
 }
 
 LOGDIR = "./logs_eve"
-MODEL_PATH = os.path.join(LOGDIR, "ppo_eve.zip")
+MODEL_PATH = os.path.join(LOGDIR, "ppo_eveirfix.zip")
 
 os.makedirs(LOGDIR, exist_ok=True)
 
@@ -62,7 +62,7 @@ if __name__ == "__main__":
         gamma=0.99,
         gae_lambda=0.95,
         clip_range=0.2,
-        ent_coef=0.02,
+        ent_coef=0.05,
         vf_coef=0.5,
         verbose=1,
     )
@@ -71,4 +71,4 @@ if __name__ == "__main__":
     model.save(MODEL_PATH)
 
     # Save VecNormalize stats
-    env.save(os.path.join(LOGDIR, "vecnormalize_eve.pkl"))
+    env.save(os.path.join(LOGDIR, "vecnormalize_eveirfix.pkl"))
