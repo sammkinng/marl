@@ -20,12 +20,12 @@ if __name__ == "__main__":
     import os
     import copy
 
-    LOGDIR = "./logs_eve"
-    MODEL_PATH = os.path.join(LOGDIR, "ppo_eve.zip")
-    VECNORM   = os.path.join(LOGDIR, "vecnormalize_eve.pkl")
+    LOGDIR = "./logs_alice"
+    MODEL_PATH = os.path.join(LOGDIR, "ppo_alice.zip")
+    VECNORM   = os.path.join(LOGDIR, "vecnormalize_alice.pkl")
 
     # Load env & stats
-    env = DummyVecEnv([lambda: EveSingleAgentEnv(copy.deepcopy(sim_config))])
+    env = DummyVecEnv([lambda: AliceSingleAgentEnv(copy.deepcopy(sim_config))])
     env = VecNormalize.load(VECNORM, env)
     env.training = False
     env.norm_reward = False
@@ -37,7 +37,7 @@ if __name__ == "__main__":
     
     # Test the trained agent
     obs = env.reset()
-    for _ in range(100):
+    for _ in range(10):
         action, _ = model.predict(obs, deterministic=True)
         obs, reward, done,  info = env.step(action)
         r_mean = np.mean(reward)

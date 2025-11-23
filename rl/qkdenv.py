@@ -24,7 +24,7 @@ from sim.core_sim import QKDSimulator
 class QKDEnv(gym.Env):
     metadata = {"render.modes": ["human"]}
 
-    def __init__(self, sim_config: Dict[str, Any], history_len: int = 5):
+    def __init__(self, sim_config: Dict[str, Any], history_len: int = 1):
         super().__init__()
 
         # Simulator instance
@@ -76,13 +76,9 @@ class QKDEnv(gym.Env):
         # Observation space (Markov-safe)
         # [detection_rate, qber, Y0_est, Y1_lower, e1_upper] all normalized 0..1
         # ---------------------------
-        obs_low = np.zeros(5, dtype=np.float32)
-        obs_high = np.ones(5, dtype=np.float32)
+        obs_low = np.zeros(6, dtype=np.float32)
+        obs_high = np.ones(6, dtype=np.float32)
         self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
-
-        # Logging / output
-        # os.makedirs(self.cfg["output_dir"], exist_ok=True)
-        # self.csv_file = os.path.join(self.cfg["output_dir"], self.cfg["results_csv"])
 
         # Reward scaling constant (tunable)
         self.MAX_SKR_BPS = 3e4  # used to normalize skr_bps to ~0..1
@@ -170,11 +166,7 @@ class QKDEnv(gym.Env):
         # ---------------------------
         # 3) Parse Eve action (for future use) - currently disabled in sim actions
         # ---------------------------
-        # e = actions.get("Eve", np.zeros(5, dtype=np.float32))
-        # # Unpack if you later want to enable composing attacks
-        # time_shift_prob, shift_frac, pns_frac, intercept_prob, extra_dark_prob = tuple(e)
-
-
+        
         e = actions.get("Eve", np.zeros(4, dtype=np.float32))
         raw_ir, raw_pns, raw_ts, raw_dark = map(float, e)
 
@@ -275,12 +267,14 @@ class QKDEnv(gym.Env):
 
 # 1e2 + 2+3e2+5e3+0-------0.02(in 300k) ---------------0.0164 with im and 5e5 norm upto 5e3 it was 0------its not saved yet
 # 0.2 soemthing for new ir and 10.0 10.0 3 and 5 and 0(300k)
+
+# best was i guess 7.06 and 3.0
         eve_reward = (
-            # + (1 - norm_skr) * 2.0
-            +10.0*qber
-            +10.0 * eig                         # reward for info gain
-    + 3.0 * min(qber, QBER_ABORT - ε)   # reward for pushing QBER up to edge
-    - 5.0 * (qber >= QBER_ABORT)        # big penalty if she crosses threshold
+            + (1 - norm_skr) * 10.0
+            +20.0*qber
+            # +10.0 * eig                         # reward for info gain
+    + 4.0 * min(qber, QBER_ABORT - ε)   # reward for pushing QBER up to edge
+    - 7.06 * (qber >= QBER_ABORT)        # big penalty if she crosses threshold
     # - 5.0 * (norm_skr <= 0.0001)  
                     # penalty for killing channel completely
         )
@@ -311,9 +305,9 @@ class QKDEnv(gym.Env):
         Fall back to safe defaults if not present.
         Keep a short history and return the mean to smooth noise.
         """
-        detection_rate = float(info.get("detection_rate", 0.0))
+        detection_rate = float(info.get("Q_s", 0.0))
         qber = float(info.get("E_s", 0.0))
-        Y0 = float(info.get("Y0", 0.0))
+        Y0 = float(info.get("Q_v", 0.0))
         Y1_lower = float(info.get("Y1_lower", info.get("Y1", 0.0)))
         e1_upper = float(info.get("e1_upper", info.get("e1", 0.0)))
 

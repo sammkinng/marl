@@ -22,8 +22,10 @@ def evaluate_eve(
     import copy
 
     LOGDIR = "./logs_eve"
-    MODEL_PATH = os.path.join(LOGDIR, "ppo_eveirfix.zip")
-    VECNORM   = os.path.join(LOGDIR, "vecnormalize_eveirfix.pkl")
+    MODEL_PATH = os.path.join(LOGDIR, "ppo_eveskr.zip")
+    # MODEL_PATH="ppo_eve_checkpoint_780000_steps.zip"
+
+    VECNORM   = os.path.join(LOGDIR, "vecnormalize_eveskr.pkl")
 
     # Load env & stats
     env = DummyVecEnv([lambda: EveSingleAgentEnv(copy.deepcopy(sim_cfg))])

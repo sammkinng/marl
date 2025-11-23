@@ -25,8 +25,8 @@ sim_actions = {
             }
 
 
-raw_ts, raw_pns, raw_ir=[0.061,0.905,-0.712]
-raw_dark=0.0708
+raw_ts, raw_pns, raw_ir=[0.563,0.449,-1.056]
+raw_dark=-0.00855
 
 logits = np.array([raw_ir, raw_pns, raw_ts], dtype=np.float32)
 exp_logits = np.exp(logits - np.max(logits))
@@ -36,8 +36,8 @@ p_ir, p_pns, p_ts = p.tolist()
 # # Sigmoid for dark-boost
 dark_boost = 1.0 / (1.0 + np.exp(-raw_dark))
 
-p_ir, p_pns, p_ts = [1.0,0.0,0.0]
-dark_boost = 1.0
+# p_ir, p_pns, p_ts = [1.0,0.0,0.0]
+# dark_boost = 1.0
 
 print(p_ts,p_pns,p_ir,dark_boost)
 print(p_ts+p_pns+p_ir)

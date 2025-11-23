@@ -1,6 +1,7 @@
 import numpy as np
 import gymnasium as gym
 from rl.qkdenv import QKDEnv
+from gymnasium import spaces
 
 class AliceSingleAgentEnv(gym.Env):
     """
@@ -14,7 +15,10 @@ class AliceSingleAgentEnv(gym.Env):
         super().__init__()
         self.env = QKDEnv(sim_config)
         self.action_space = self.env.action_space["Alice"]
-        self.observation_space = self.env.observation_space
+        # self.observation_space = self.env.observation_space
+        obs_low = np.zeros(5, dtype=np.float32)
+        obs_high = np.ones(5, dtype=np.float32)
+        self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
         self.current_step=0
     
     def set_ppe(self, new_ppe):
@@ -22,12 +26,9 @@ class AliceSingleAgentEnv(gym.Env):
 
     def reset(self, *, seed=None, options=None):
         obs, _ = self.env.reset(seed=seed, options=options)
-        return obs, {}
+        return obs[:5], {}
 
     def step(self, action):
-        # start = time.time()
-        # if self.current_step % 100 == 0:
-        #     print(f"--- Step {self.current_step} ---")
         # Bob: fixed strategy
         bob_action = np.array([0.5, 1.0], dtype=np.float32)
 
@@ -38,13 +39,8 @@ class AliceSingleAgentEnv(gym.Env):
         obs, rewards, terminated, truncated, info = self.env.step(actions)
         reward = rewards["Alice"]
         done = terminated or truncated
-        # elapsed = time.time() - start
-        # if self.current_step % 10 == 0:  # print every 10 steps
-        #     print(f"Step {self.current_step}: took {elapsed:.4f}s")
-        # self.current_step += 1
-        return obs, reward, done, False, info
-
-    
+        
+        return obs[:5], reward, done, False, info
 
 
     def render(self):
