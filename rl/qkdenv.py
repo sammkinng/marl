@@ -239,13 +239,13 @@ class QKDEnv(gym.Env):
         # info = self.sim.run_episode(actions=sim_actions, verbose=False)
 
         info=qkd_simulation(self.cfg,
-                            aa={},
-        #                     aa={
-        #     "mus": mu_signal,
-        #     "mud": mu_decoy,
-        #     "ps": self.p_signal,
-        #     "pd": self.p_decoy
-        # },
+                            # aa={},
+                            aa={
+            "mus": mu_signal,
+            "mud": mu_decoy,
+            "ps": self.p_signal,
+            "pd": self.p_decoy
+        },
         # attacks={})
                             
                             attacks = {
@@ -358,9 +358,9 @@ class QKDEnv(gym.Env):
         truncated = self.current_step >= 100
 
         # include raw sim info for debugging
-        info_out = {"raw_info": info, "alice_params": {}}
+        # info_out = {"raw_info": info, "alice_params": {}}
 
-        return obs, rewards, terminated, truncated, info_out
+        return obs, rewards, terminated, truncated, info
 
     def _obs_from_info(self, info: Dict[str, Any]) -> np.ndarray:
         """
