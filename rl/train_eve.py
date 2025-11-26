@@ -7,20 +7,13 @@ from stable_baselines3.common.callbacks import EvalCallback
 from rl.agents.train_eve import EveSingleAgentEnv
 from stable_baselines3.common.monitor import Monitor
 
+import yaml
 
-SIM_CFG = {
-    "pulses_per_episode": 1000,
-    "output_dir": "./results",
-    "results_csv": "alice_results.csv",
-    "fiber_loss_db_per_km": 0.2,
-    "distance_km": 50.0,
-    "det_eff": 0.2,
-    "dark_count": 1e-6,
-    "baseline_qber": 0.01,
-}
+SIM_CFG = yaml.safe_load(open("configs/config.yaml"))
+
 
 LOGDIR = "./logs_eve"
-MODEL_PATH = os.path.join(LOGDIR, "ppo_eveskr.zip")
+MODEL_PATH = os.path.join(LOGDIR, "ppo_eveanal5.zip")
 
 os.makedirs(LOGDIR, exist_ok=True)
 
@@ -67,8 +60,8 @@ if __name__ == "__main__":
         verbose=1,
     )
 
-    model.learn(total_timesteps=1000_000, callback=callback)
+    model.learn(total_timesteps=1500_000, callback=callback)
     model.save(MODEL_PATH)
 
     # Save VecNormalize stats
-    env.save(os.path.join(LOGDIR, "vecnormalize_eveskr.pkl"))
+    env.save(os.path.join(LOGDIR, "vecnormalize_eveanal5.pkl"))

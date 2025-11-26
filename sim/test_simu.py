@@ -45,29 +45,29 @@ print(p_ts+p_pns+p_ir)
 max_extra_dark = 5e-6
 extra_dark_prob = dark_boost * max_extra_dark
 
-sim_actions["Eve"] = {"type": "composite",
-                            "sub_attacks":[
-    {
-        "type": "intercept_resend",
-        "intercept_prob": p_ir,
-        "resend_eff": 0.8,
-        "resend_error_prob": 0.05,
-    },
-    {
-        "type": "pns",
-        "pns_frac": p_pns,
-    },
-    {
-        "type": "time_shift",
-        "attack_prob": p_ts,
-        "shift_frac": 0.2,
-        "timing_qber_delta": 0.01,
-    },
-    {
-        "type": "dark_count",
-        "extra_dark_prob": extra_dark_prob,
-    }
-]}
+# sim_actions["Eve"] = {"type": "composite",
+#                             "sub_attacks":[
+#     {
+#         "type": "intercept_resend",
+#         "intercept_prob": p_ir,
+#         "resend_eff": 0.8,
+#         "resend_error_prob": 0.05,
+#     },
+#     {
+#         "type": "pns",
+#         "pns_frac": p_pns,
+#     },
+#     {
+#         "type": "time_shift",
+#         "attack_prob": p_ts,
+#         "shift_frac": 0.2,
+#         "timing_qber_delta": 0.01,
+#     },
+#     {
+#         "type": "dark_count",
+#         "extra_dark_prob": extra_dark_prob,
+#     }
+# ]}
 
 sim=QKDSimulator(SIM_CFG)
 

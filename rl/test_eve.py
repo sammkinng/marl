@@ -22,10 +22,10 @@ def evaluate_eve(
     import copy
 
     LOGDIR = "./logs_eve"
-    MODEL_PATH = os.path.join(LOGDIR, "ppo_eveskr.zip")
+    MODEL_PATH = os.path.join(LOGDIR, "ppo_eveanal5.zip")
     # MODEL_PATH="ppo_eve_checkpoint_780000_steps.zip"
 
-    VECNORM   = os.path.join(LOGDIR, "vecnormalize_eveskr.pkl")
+    VECNORM   = os.path.join(LOGDIR, "vecnormalize_eveanal5.pkl")
 
     # Load env & stats
     env = DummyVecEnv([lambda: EveSingleAgentEnv(copy.deepcopy(sim_cfg))])
@@ -90,6 +90,7 @@ def evaluate_eve(
             "extra_dark": eve_a[3],
             "QBER": raw["E_s"],
             "SKR": raw["SKR_bits_per_pulse"],
+            "ig":raw["info_gain_per_pulse"]
         })
 
     print("\n===== Final Eve Test Results =====")
@@ -97,6 +98,8 @@ def evaluate_eve(
     print(f"Eve SKR:                 {np.mean(results_with_eve):.6e}")
     print(f"SKR Reduction:           {baseline_mean_skr - np.mean(results_with_eve):.6e}")
     print(f"QBER with Eve:           {np.mean([d['QBER'] for d in attack_stats]):.4f}")
+    print(f"IG with Eve:           {np.mean([d['ig'] for d in attack_stats]):.4f}")
+    
     print(f"Mean Attack Strengths:   ")
     print(f"  Time-shift:            {np.mean([d['p_timeshift'] for d in attack_stats]):.3f}")
     print(f"  PNS:                   {np.mean([d['p_pns'] for d in attack_stats]):.3f}")
@@ -114,16 +117,9 @@ def evaluate_eve(
 
 if __name__ == "__main__":
 
-    SIM_CFG = {
-        "pulses_per_episode": 100000,
-        "results_csv": "alice_results.csv",
-        "output_dir": "./results",
-        "fiber_loss_db_per_km": 0.2,
-        "distance_km": 50.0,
-        "det_eff": 0.2,
-        "dark_count": 1e-6,
-        "baseline_qber": 0.01,
-    }
+    import yaml
+
+    SIM_CFG = yaml.safe_load(open("configs/config.yaml"))
 
     evaluate_eve(
         eve_model_path="./logs_eve/ppo_eve.zip",

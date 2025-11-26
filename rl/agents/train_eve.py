@@ -1,7 +1,7 @@
 import gymnasium as gym
 import numpy as np
 from rl.qkdenv import QKDEnv
-
+from gymnasium import spaces
 
 class EveSingleAgentEnv(gym.Env):
     """
@@ -20,7 +20,10 @@ class EveSingleAgentEnv(gym.Env):
 
         # Eve is the only learning agent
         self.action_space = self.env.action_space["Eve"]
-        self.observation_space = self.env.observation_space
+        # self.observation_space = self.env.observation_space
+        obs_low = np.zeros(5, dtype=np.float32)
+        obs_high = np.ones(5, dtype=np.float32)
+        self.observation_space = spaces.Box(obs_low, obs_high, dtype=np.float32)
 
         self.current_step = 0
 
@@ -28,15 +31,14 @@ class EveSingleAgentEnv(gym.Env):
     def set_ppe(self, new_ppe):
         self.env.set_ppe(new_ppe)
 
-    def set_reward_scale(self, new_scale):
-        self.env.set_reward_scale(new_scale)
 
     # ----------------------
     # Reset
     # ----------------------
     def reset(self, *, seed=None, options=None):
         obs, _ = self.env.reset(seed=seed, options=options)
-        return obs, {}
+        tobs = np.concatenate([obs[:3], obs[5:]])
+        return tobs, {}
 
     # ----------------------
     # Step
@@ -64,7 +66,9 @@ class EveSingleAgentEnv(gym.Env):
 
         done = terminated or truncated
 
-        return obs, reward, done, False, info
+        tobs = np.concatenate([obs[:3], obs[5:]])
+
+        return tobs, reward, done, False, info
 
     def render(self):
         self.env.render()
