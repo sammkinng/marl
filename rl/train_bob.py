@@ -4,16 +4,17 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize,SubprocVecEnv
 from stable_baselines3.common.callbacks import EvalCallback
 
-from rl.agents.train_eve import EveSingleAgentEnv
 from stable_baselines3.common.monitor import Monitor
 
 import yaml
 
+from rl.agents.bob import BobTrainEnv
+
 SIM_CFG = yaml.safe_load(open("configs/config.yaml"))
 
 
-LOGDIR = "./logs_eve"
-MODEL_PATH = os.path.join(LOGDIR, "ppo_ever5.zip")
+LOGDIR = "./logs_bob"
+MODEL_PATH = os.path.join(LOGDIR, "ppo_bobr5.zip")
 
 os.makedirs(LOGDIR, exist_ok=True)
 
@@ -22,7 +23,7 @@ os.makedirs(LOGDIR, exist_ok=True)
 
 def make_env(rank, log_dir=LOGDIR):
     def _init():
-        env = EveSingleAgentEnv(SIM_CFG)
+        env = BobTrainEnv(SIM_CFG)
         # Create per-worker log folder
         worker_log = os.path.join(log_dir, f"env_{rank}")
         os.makedirs(worker_log, exist_ok=True)
@@ -39,7 +40,7 @@ if __name__ == "__main__":
 
     # ---- Eval env (single-thread) ----
     eval_env = DummyVecEnv([
-    lambda: Monitor(EveSingleAgentEnv(SIM_CFG), "./logs_eve/eval_monitor.csv")
+    lambda: Monitor(BobTrainEnv(SIM_CFG), "./logs_bob/eval_monitor.csv")
 ])
     eval_env = VecNormalize(eval_env, training=False, norm_obs=True, norm_reward=True)
     callback = EvalCallback(eval_env, best_model_save_path=LOGDIR, log_path=LOGDIR,
@@ -64,4 +65,4 @@ if __name__ == "__main__":
     model.save(MODEL_PATH)
 
     # Save VecNormalize stats
-    env.save(os.path.join(LOGDIR, "vecnormalize_ever5.pkl"))
+    env.save(os.path.join(LOGDIR, "vecnormalize_bobr5.pkl"))

@@ -1,7 +1,14 @@
 import gymnasium as gym
 import numpy as np
-from rl.qkdenv import QKDEnv
+from stable_baselines3 import PPO
+from rl.dummyenv import _DummyObsEnv
+from rl.env import QKDEnv
 from gymnasium import spaces
+
+import os
+
+from stable_baselines3.common.vec_env import DummyVecEnv,VecNormalize
+
 
 class EveSingleAgentEnv(gym.Env):
     """
@@ -27,6 +34,41 @@ class EveSingleAgentEnv(gym.Env):
 
         self.current_step = 0
 
+        obs_low = np.zeros(7, dtype=np.float32)
+        obs_high = np.ones(7, dtype=np.float32)
+        self._last_obs = spaces.Box(obs_low, obs_high, dtype=np.float32)
+        self.load_models()
+
+    def load_models(self):
+        LOGDIR = "./rl"
+        LOGDIRb = "./logs_bob"
+
+        MODEL_PATHa = os.path.join(LOGDIR, "ppo_alice.zip")
+        VECNORMa   = os.path.join(LOGDIR, "vecnormalize_alice.pkl")
+
+        MODEL_PATHb = os.path.join(LOGDIRb, "ppo_bobr5.zip")
+        VECNORMb   = os.path.join(LOGDIRb, "vecnormalize_bobr5.pkl")
+
+        # Load env & stats
+
+        enva = DummyVecEnv([lambda: _DummyObsEnv(5, self.env.action_space["Alice"])])
+        enva = VecNormalize.load(VECNORMa, enva)
+        enva.training = False
+        # enva.norm_reward = False
+
+        alice_model = PPO.load(MODEL_PATHa,env=enva)
+
+        envb = DummyVecEnv([lambda: _DummyObsEnv(5, self.env.action_space["Bob"])])
+        envb = VecNormalize.load(VECNORMb, envb)
+        envb.training = False
+        # envb.norm_reward = False
+
+        bob_model = PPO.load(MODEL_PATHb,env=envb)
+
+        self.alice_model = alice_model
+        self.bob_model = bob_model
+
+
     # Optional: expose PPE / reward scaling controls
     def set_ppe(self, new_ppe):
         self.env.set_ppe(new_ppe)
@@ -38,17 +80,18 @@ class EveSingleAgentEnv(gym.Env):
     def reset(self, *, seed=None, options=None):
         obs, _ = self.env.reset(seed=seed, options=options)
         tobs = np.concatenate([obs[:3], obs[5:]])
+        self._last_obs = obs.copy()
         return tobs, {}
 
     # ----------------------
     # Step
     # ----------------------
     def step(self, action):
-        # Alice fixed strategy
-        alice_action = np.array([0.6, 0.1, 0.7,0.0], dtype=np.float32)
+        alice_obs = bob_obs = self._last_obs[:5]
+        alice_action,_ = self.alice_model.predict(alice_obs, deterministic=True)
 
-        # Bob fixed strategy
-        bob_action = np.array([0.5, 1.0], dtype=np.float32)
+        
+        bob_action,_ = self.bob_model.predict(bob_obs, deterministic=True)
 
         # Eve is controlled by RL (your 5-dim vector)
         eve_action = action

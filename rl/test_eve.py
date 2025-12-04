@@ -22,10 +22,10 @@ def evaluate_eve(
     import copy
 
     LOGDIR = "./logs_eve"
-    MODEL_PATH = os.path.join(LOGDIR, "ppo_eveanal5.zip")
+    MODEL_PATH = os.path.join(LOGDIR, "ppo_eveprebob.zip")
     # MODEL_PATH="ppo_eve_checkpoint_780000_steps.zip"
 
-    VECNORM   = os.path.join(LOGDIR, "vecnormalize_eveanal5.pkl")
+    VECNORM   = os.path.join(LOGDIR, "vecnormalize_eveprebob.pkl")
 
     # Load env & stats
     env = DummyVecEnv([lambda: EveSingleAgentEnv(copy.deepcopy(sim_cfg))])
@@ -79,7 +79,7 @@ def evaluate_eve(
 
         obs2, reward,  _, info = env.step(eve_a)
 
-        raw = info[0]["raw_info"]
+        raw = info[0]
         results_with_eve.append(raw["SKR_bits_per_pulse"])
         eve_a=eve_a[0]
 

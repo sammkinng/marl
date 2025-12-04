@@ -11,6 +11,7 @@ __pycache__
 .env.*
 logs_alice/
 logs_eve/
+logs_bob
 checkpoints
 simulation_cache.csv
 simulation_cache.csv.lock
